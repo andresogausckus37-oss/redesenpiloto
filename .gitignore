@@ -34,3 +34,11 @@ dist-ssr
 
 # Archivos temporales de Wrangler
 .wrangler/
+
+# Parches y entregas (no versionar)
+*.zip
+*.patch
+*.diff
+
+# Directorios de agentes y tests locales
+.agents/
