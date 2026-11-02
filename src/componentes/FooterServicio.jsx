@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 
 const RUTA_LANDING = "/servicios/publicacion-automatica";
+const FUENTE = "'Montserrat', ui-sans-serif, system-ui, sans-serif";
 
 const IconoInstagram = () => (
   <svg
@@ -29,12 +30,15 @@ export default function FooterServicio() {
   };
 
   return (
-    <footer className="bg-slate-900 px-5 py-12 text-slate-300">
+    <footer
+      style={{ fontFamily: FUENTE }}
+      className="bg-tinta px-5 py-12 text-borde"
+    >
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           <div>
-            <p className="text-base font-semibold text-white">redesenpiloto</p>
-            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
+            <p className="text-base font-semibold text-white">Redes en Piloto</p>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-tinta-apagado">
               Gestión automática de publicaciones para Facebook e Instagram.
             </p>
           </div>
@@ -71,8 +75,8 @@ export default function FooterServicio() {
             </a>
           </nav>
         </div>
-        <div className="mt-10 border-t border-slate-800 pt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} redesenpiloto. Todos los derechos reservados.
+        <div className="mt-10 border-t border-tinta pt-6 text-center text-xs text-tinta-apagado">
+          © {new Date().getFullYear()} Redes en Piloto. Todos los derechos reservados.
         </div>
       </div>
     </footer>

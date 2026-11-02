@@ -33,11 +33,11 @@ const API_INSTAGRAM = "/api/servicios/meta/pedidos/instagram";
 const PEDIDO_SESION = "pedido-publicaciones-transferencia-v1";
 const VALIDAR_PEDIDO = /^SER-[a-f0-9-]{36}$/i;
 const VALIDAR_CLAVE = /^[a-f0-9]{64}$/i;
-const BTN = "inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50";
-const BTN_PRIMARIO = `${BTN} border border-orange-600 bg-orange-600 text-white hover:border-orange-700 hover:bg-orange-700 active:bg-orange-800`;
+const BTN = "inline-flex min-h-8 items-center justify-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracota disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_PRIMARIO = `${BTN} border border-terracota bg-terracota text-white hover:border-terracota-oscuro hover:bg-terracota-oscuro active:bg-terracota-oscuro`;
 const BTN_SECUNDARIO = `${BTN} border border-sky-300 bg-sky-100 text-sky-900 hover:border-sky-400 hover:bg-sky-200`;
-const CARD = "rounded-md border border-slate-200 bg-white";
-const CAMPO = "w-full min-h-9 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100";
+const CARD = "rounded-sm border border-borde bg-white";
+const CAMPO = "w-full min-h-9 rounded-sm border border-borde bg-white px-3 py-1.5 text-sm text-tinta outline-none focus:border-terracota focus:ring-2 focus:ring-terracota-suave";
 
 const ESTADOS = {
   pendiente: "Pendiente", confirmado: "Confirmado", conectada: "Conectada",
@@ -63,14 +63,14 @@ function tonoEstado(valor) {
   return "border-sky-200 bg-sky-50 text-sky-800";
 }
 function Etiqueta({ valor, texto }) {
-  return <span className={`inline-flex max-w-full items-center rounded-md border px-2.5 py-1 text-[11px] font-medium ${tonoEstado(valor)}`}>
+  return <span className={`inline-flex max-w-full items-center rounded-sm border px-2.5 py-1 text-[11px] font-medium ${tonoEstado(valor)}`}>
     {texto || estado(valor)}
   </span>;
 }
 function CampoInfo({ etiqueta, valor }) {
   return <div className="min-w-0">
-    <p className="text-[11px] text-slate-500">{etiqueta}</p>
-    <p className="mt-0.5 break-words text-xs font-medium text-slate-800">{valor}</p>
+    <p className="text-[11px] text-tinta-apagado">{etiqueta}</p>
+    <p className="mt-0.5 break-words text-xs font-medium text-tinta">{valor}</p>
   </div>;
 }
 
@@ -138,6 +138,8 @@ const ZONAS_DISPONIBLES = [
 // Configuración de la semana dentro del panel: no se navega a otra página.
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const HORAS_SEMANA = ["09:00", "10:00", "12:00", "14:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+// Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
+const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
 const SEMANA_BASE = [
   ["reel", "Lunes", "18:00"], ["carrusel", "Miércoles", "18:00"],
   ["imagen", "Viernes", "18:00"], ["reel", "Domingo", "18:00"],
@@ -157,7 +159,7 @@ function VistaArchivoLocal({ archivo, tipo }) {
     return () => URL.revokeObjectURL(nueva);
   }, [archivo]);
   if (!archivo || !url) return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-slate-400">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
       <FileImage size={28} strokeWidth={1.5} />
       <p className="text-xs leading-5">Elegí {tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
     </div>
@@ -198,8 +200,8 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       .finally(() => { if (activo) setConsultando(false); });
     return () => { activo = false; };
   }, [modoRenovacion]);
-  const item = contenidos[seleccionado];
-  const redPrevia = redes.includes(redVista) ? redVista : redes[0];
+  const item = contenidos[seleccionado] || contenidos[0];
+  const redPrevia = redes.includes(redVista) ? redVista : (redes[0] || "instagram");
   const nombre = perfil?.emprendimiento?.trim() || "";
   const datosCompletos = Boolean(nombre && perfil?.nombreApellido?.trim() && email && perfil?.whatsapp?.trim());
   const actualizar = cambios => setContenidos(lista => lista.map((c, i) => i === seleccionado ? { ...c, ...cambios } : c));
@@ -392,13 +394,13 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   const ctaVisible = redPrevia === "instagram" ? item.ctaInstagram : item.ctaFacebook;
   const textoVistaPrevia = (
     <div className="px-3 py-3">
-      <p className="whitespace-pre-wrap break-words text-sm font-normal leading-5 text-slate-700">
+      <p className="whitespace-pre-wrap break-words text-sm font-normal leading-5 text-tinta-suave">
         {item.descripcion.trim() || "Acá vas a ver la idea de tu publicación."}
       </p>
-      {ctaVisible.trim() && <p className="mt-2 text-sm font-medium text-slate-800">{ctaVisible}</p>}
+      {ctaVisible.trim() && <p className="mt-2 text-sm font-medium text-tinta">{ctaVisible}</p>}
       {redPrevia === "facebook" && item.urlFacebook.trim() &&
-        <p className="mt-1 break-all text-sm text-orange-700 underline underline-offset-2">{item.urlFacebook}</p>}
-      {item.hashtags.trim() && <p className="mt-2 break-words text-sm text-orange-700">{item.hashtags}</p>}
+        <p className="mt-1 break-all text-sm text-terracota-oscuro underline underline-offset-2">{item.urlFacebook}</p>}
+      {item.hashtags.trim() && <p className="mt-2 break-words text-sm text-terracota-oscuro">{item.hashtags}</p>}
     </div>
   );
   const sinEdicion = !!pedidoCreado || enviando;
@@ -411,7 +413,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   return <form onSubmit={programar} className="space-y-4 font-normal">
     <div className={`${CARD} p-4 sm:p-5`}>
       <h2 className="text-sm font-medium">{modoRenovacion ? `Programar nueva semana · Semana ${pedidoRenovacion.numeroSemana || 2}` : "Programá tu primera semana"}</h2>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{modoRenovacion ? "Configurá los cuatro contenidos de tu semana pagada. Se enviarán a revisión administrativa antes de publicarse." : "Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas."}</p>
+      <p className="mt-1 text-xs leading-5 text-tinta-apagado">{modoRenovacion ? "Configurá los cuatro contenidos de tu semana pagada. Se enviarán a revisión administrativa antes de publicarse." : "Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas."}</p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="mb-2 text-xs font-medium">Facebook e Instagram</p>
@@ -420,12 +422,12 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               const activa = redes.includes(red);
               return <button type="button" key={red} aria-pressed={activa} disabled={sinEdicion || modoRenovacion}
                 onClick={() => alternarRed(red)}
-                className={`flex min-h-9 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium transition ${activa ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"}`}>
+                className={`flex min-h-9 items-center justify-center gap-1.5 rounded-sm border px-2 py-1.5 text-xs font-medium transition ${activa ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
                 <LogoRed red={red} size={19} />{redLabel(red)} {activa && <Check size={13} />}
               </button>;
             })}
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">{cantidad} publicaciones · {redes.length} {redes.length === 1 ? "red" : "redes"}</p>
+          <p className="mt-2 text-[11px] text-tinta-apagado">{cantidad} publicaciones · {redes.length} {redes.length === 1 ? "red" : "redes"}</p>
         </div>
         <div>
           <label className="mb-2 block text-xs font-medium" htmlFor="pais-zona">Zona horaria con selección de país</label>
@@ -443,7 +445,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
 
     <div className={`${CARD} p-4 sm:p-5`}>
       <h2 className="text-sm font-medium">Elegí el contenido que querés publicar</h2>
-      <p className="mt-1 text-xs leading-5 text-slate-500">Cada contenido conserva sus propios archivos, formato, textos, día, horario y hagstags.</p>
+      <p className="mt-1 text-xs leading-5 text-tinta-apagado">Cada contenido conserva sus propios archivos, formato, textos, día, horario y hagstags.</p>
     </div>
 
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_350px]">
@@ -452,14 +454,14 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
             Contenidos <ChevronDown size={14} className="transition group-open:rotate-180" />
           </summary>
-          <div className="border-t border-slate-100 p-4">
-            <p className="mb-3 text-xs text-slate-500">Formato, archivos, día y hora.</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Elegir contenido">
+          <div className="border-t border-borde p-4">
+            <p className="mb-3 text-xs text-tinta-apagado">Formato, archivos, día y hora.</p>
+            <div className="grid grid-cols-4 gap-2" role="group" aria-label="Elegir contenido">
               {contenidos.map((c, i) => {
-                const Icono = TIPOS_EDITOR[c.tipo].icono;
+                const Icono = (TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).icono;
                 return <button type="button" key={c.id} aria-pressed={seleccionado === i}
                   onClick={() => { setSeleccionado(i); setMediaVista(0); setErrorEditor(""); }}
-                  className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-medium transition ${seleccionado === i ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"}`}>
+                  className={`flex items-center justify-center gap-1.5 rounded-sm border px-2 py-2 text-xs font-medium transition ${seleccionado === i ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
                   <Icono size={15} /> Contenido {i + 1}
                 </button>;
               })}
@@ -482,30 +484,30 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </label>
               <label className="text-xs font-medium">Horario local
                 <select className={`mt-1 ${CAMPO}`} value={item.hora} disabled={sinEdicion} onChange={e => actualizar({ hora: e.target.value })}>
-                  {HORAS_SEMANA.map(x => <option key={x}>{x}</option>)}
+                  {HORAS_SEMANA.map(x => <option key={x} value={x}>{a12h(x)}</option>)}
                 </select>
               </label>
             </div>
-            <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
-              <label className={`flex items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-orange-500"}`}>
-                <CloudUpload size={19} className="shrink-0 text-orange-700" />
+              <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-terracota"}`}>
+                <CloudUpload size={19} className="shrink-0 text-terracota-oscuro" />
                 <span className="text-xs font-medium">{item.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
-                <span className="hidden text-xs text-slate-500 sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
+                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
                 <input type="file" className="sr-only" disabled={sinEdicion}
                   accept={item.tipo === "reel" ? "video/mp4,.mp4" : "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"}
                   multiple={esCarrusel} onChange={seleccionarArchivos} />
               </label>
-              <p className="mt-2 text-[11px] text-slate-500">{esCarrusel ? "De 2 a 10 imágenes" : item.tipo === "reel" ? "Un video MP4" : "Una imagen"}.</p>
+              <p className="mt-2 text-[11px] text-tinta-apagado">{esCarrusel ? "De 2 a 10 imágenes" : item.tipo === "reel" ? "Un video MP4" : "Una imagen"}.</p>
               {modoRenovacion && redes.includes("instagram") && item.tipo !== "reel" && (
-                <p className="mt-1 text-[11px] text-slate-600">
+                <p className="mt-1 text-[11px] text-tinta-suave">
                   Admitimos JPG, PNG y WebP. Durante la revisión, preparamos una copia JPEG antes de programar Instagram.
                 </p>
               )}
               {item.archivos.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">
-                {item.archivos.map((archivo, indice) => <span key={`${item.id}-${indice}-${archivo.name}`} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-xs">
+                {item.archivos.map((archivo, indice) => <span key={`${item.id}-${indice}-${archivo.name}`} className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-borde px-2 py-1 text-xs">
                   <span className="max-w-36 truncate" title={archivo.name}>{archivo.name}</span>
-                  <button type="button" aria-label={`Quitar ${archivo.name}`} disabled={sinEdicion} className="text-slate-500 hover:text-red-700 disabled:opacity-50"
+                  <button type="button" aria-label={`Quitar ${archivo.name}`} disabled={sinEdicion} className="text-tinta-apagado hover:text-red-700 disabled:opacity-50"
                     onClick={() => quitarArchivo(indice)}><Trash2 size={13} /></button>
                 </span>)}
               </div>}
@@ -518,8 +520,8 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
             Texto y detalles de la publicación <ChevronDown size={14} className="transition group-open:rotate-180" />
           </summary>
-          <div className="grid gap-3 border-t border-slate-100 p-4 sm:grid-cols-2">
-            <p className="col-span-full text-xs text-slate-500">Mensaje, llamadas a la acción, enlaces y hashtags.</p>
+          <div className="grid gap-3 border-t border-borde p-4 sm:grid-cols-2">
+            <p className="col-span-full text-xs text-tinta-apagado">Mensaje, llamadas a la acción, enlaces y hashtags.</p>
             <label className="col-span-full text-xs font-medium">Copy o texto de la publicación
               <textarea className={`${CAMPO} mt-1 min-h-24`} placeholder="Escribí el texto de tu publicación" maxLength={1500} disabled={sinEdicion} value={item.descripcion} onChange={e => actualizar({ descripcion: e.target.value })} />
             </label>
@@ -546,47 +548,47 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
             Vista previa <ChevronDown size={14} className="transition group-open:rotate-180" />
           </summary>
-          <div className="border-t border-slate-100 p-3 sm:p-4">
-            <p className="mb-3 text-xs text-slate-500">Contenido {seleccionado + 1} · Así se verá en cada red</p>
+          <div className="border-t border-borde p-3 sm:p-4">
+            <p className="mb-3 text-xs text-tinta-apagado">Contenido {seleccionado + 1} · Así se verá en cada red</p>
             <div className="mb-3 flex gap-2" role="group" aria-label="Ver publicación por red">
               {["instagram", "facebook"].filter(red => redes.includes(red)).map(red => <button type="button" key={red} aria-pressed={redPrevia === red} onClick={() => setRedVista(red)}
-                className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${redPrevia === red ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 text-slate-600"}`}>
+                className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium ${redPrevia === red ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde text-tinta-suave"}`}>
                 <LogoRed red={red} size={19} /> {redLabel(red)}
               </button>)}
             </div>
-            <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div className="overflow-hidden rounded-sm border border-borde bg-white">
               <div className="flex items-center gap-2 px-3 py-3">
                 <LogoRed red={redPrevia} size={27} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-slate-900">{redPrevia === "instagram" ? usuarioVisible : nombreVisible}</p>
-                  <p className="text-[11px] font-normal text-slate-500">{redPrevia === "instagram" ? "Publicación de Instagram" : "Página de Facebook · Público"}</p>
+                  <p className="truncate text-xs font-medium text-tinta">{redPrevia === "instagram" ? usuarioVisible : nombreVisible}</p>
+                  <p className="text-[11px] font-normal text-tinta-apagado">{redPrevia === "instagram" ? "Publicación de Instagram" : "Página de Facebook · Público"}</p>
                 </div>
-                <MoreHorizontal size={19} className="text-slate-500" />
+                <MoreHorizontal size={19} className="text-tinta-apagado" />
               </div>
               {redPrevia === "facebook" && textoVistaPrevia}
-              <div className="bg-slate-50 px-3 py-2">
-                <div className={`relative mx-auto overflow-hidden rounded-md bg-slate-100 ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
+              <div className="bg-crema px-3 py-2">
+                <div className={`relative mx-auto overflow-hidden rounded-sm bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
                   style={{ aspectRatio: item.formato.replace(":", " / ") }}>
                   <VistaArchivoLocal archivo={item.archivos[mediaVista] || item.archivos[0]} tipo={item.tipo} />
                   {esCarrusel && item.archivos.length > 1 && <>
                     <button type="button" aria-label="Imagen anterior" onClick={() => setMediaVista(i => (i - 1 + item.archivos.length) % item.archivos.length)}
-                      className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-1.5 text-slate-800"><ChevronLeft size={16} /></button>
+                      className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-sm bg-white/90 p-1.5 text-tinta"><ChevronLeft size={16} /></button>
                     <button type="button" aria-label="Imagen siguiente" onClick={() => setMediaVista(i => (i + 1) % item.archivos.length)}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-1.5 text-slate-800"><ChevronRight size={16} /></button>
-                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/65 px-2 py-1 text-[10px] text-white">{mediaVista + 1}/{item.archivos.length}</span>
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm bg-white/90 p-1.5 text-tinta"><ChevronRight size={16} /></button>
+                    <span className="absolute right-1.5 top-1.5 rounded-sm bg-black/65 px-2 py-1 text-[10px] text-white">{mediaVista + 1}/{item.archivos.length}</span>
                   </>}
                 </div>
               </div>
-              {redPrevia === "instagram" ? <div className="flex items-center gap-3 px-3 pt-3 text-slate-800" aria-label="Acciones orientativas de Instagram">
+              {redPrevia === "instagram" ? <div className="flex items-center gap-3 px-3 pt-3 text-tinta" aria-label="Acciones orientativas de Instagram">
                 <Heart size={19} /><MessageCircle size={19} /><Send size={19} />
-              </div> : <div className="flex items-center justify-around border-b border-slate-100 px-3 py-2 text-xs text-slate-500" aria-label="Acciones orientativas de Facebook">
+              </div> : <div className="flex items-center justify-around border-b border-borde px-3 py-2 text-xs text-tinta-apagado" aria-label="Acciones orientativas de Facebook">
                 <span className="inline-flex items-center gap-1"><ThumbsUp size={15} /> Me gusta</span>
                 <span className="inline-flex items-center gap-1"><MessageCircle size={15} /> Comentar</span>
                 <span className="inline-flex items-center gap-1"><Send size={15} /> Compartir</span>
               </div>}
               {redPrevia === "instagram" && textoVistaPrevia}
             </div>
-            <p className="mt-2 text-xs font-normal leading-4 text-slate-500">Simulación orientativa: la apariencia final puede variar según la red social.</p>
+            <p className="mt-2 text-xs font-normal leading-4 text-tinta-apagado">Simulación orientativa: la apariencia final puede variar según la red social.</p>
           </div>
         </details>
       </aside>
@@ -596,16 +598,16 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
         Resumen y programación <ChevronDown size={14} className="transition group-open:rotate-180" />
       </summary>
-      <div className="space-y-3 border-t border-slate-100 p-4 text-xs">
-        <div><p className="font-medium">{cantidad} publicaciones</p><p className="mt-0.5 text-slate-500">{redes.map(redLabel).join(" · ")}</p></div>
-        {contenidos.map((c, i) => <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-          <p>Contenido {i + 1} · {TIPOS_EDITOR[c.tipo].titulo}</p>
-          <p className="text-slate-500">{c.dia} · {c.hora} hora local</p>
+      <div className="space-y-3 border-t border-borde p-4 text-xs">
+        <div><p className="font-medium">{cantidad} publicaciones</p><p className="mt-0.5 text-tinta-apagado">{redes.map(redLabel).join(" · ")}</p></div>
+        {contenidos.map((c, i) => <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-borde pb-2 last:border-0 last:pb-0">
+          <p>Contenido {i + 1} · {(TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).titulo}</p>
+          <p className="text-tinta-apagado">{c.dia} · {a12h(c.hora)} hora local</p>
         </div>)}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
-        {!consultando && !habilitada && <p className="text-slate-600">La programación gratuita todavía no está habilitada en el servidor.</p>}
+        {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
-        {subida && <p role="status" className="text-slate-600">Subiendo {subida.archivo} · {subida.porcentaje}%</p>}
+        {subida && <p role="status" className="text-tinta-suave">Subiendo {subida.archivo} · {subida.porcentaje}%</p>}
         <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || enviando || !redes.length}>
           {enviando ? "Guardando y subiendo archivos..." : pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
         </button>
@@ -614,7 +616,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             onClick={finalizarEnvioAnterior}>
             Finalizar envío anterior (sin volver a subir)
           </button>}
-        <p className="text-[11px] text-slate-500">{modoRenovacion
+        <p className="text-[11px] text-tinta-apagado">{modoRenovacion
           ? "Si tus archivos ya quedaron cargados, podés finalizar el envío anterior sin seleccionarlos otra vez."
           : "El pedido queda pendiente de revisión. Los 7 días de prueba comienzan luego de la aprobación."}</p>
       </div>
@@ -669,13 +671,13 @@ function RenovacionPaypalReal({pedidoId,seleccion,alActualizar}) {
   const finalizada=pedido&&(pedido.configuracionEstado==="programada"||pedido.estadoSemana==="finalizada");
   const pendiente=pedido&&!finalizada;
   const otrasRedes=pendiente&&JSON.stringify([...(pedido.redes||[])].sort())!==JSON.stringify((seleccion==="ambas"?["facebook","instagram"]:[seleccion]).sort());
-  return <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3 text-xs">
-    <p className="font-medium text-slate-900">PayPal · semana adicional de 7 días</p>
-    <p className="text-slate-600">Importe seleccionado: <strong>USD {precio}</strong>. El importe definitivo se verifica en el servidor antes de enviar a PayPal.</p>
+  return <div className="space-y-3 rounded-sm border border-borde bg-white p-3 text-xs">
+    <p className="font-medium text-tinta">PayPal · semana adicional de 7 días</p>
+    <p className="text-tinta-suave">Importe seleccionado: <strong>USD {precio}</strong>. El importe definitivo se verifica en el servidor antes de enviar a PayPal.</p>
     {info?.entorno==="sandbox"&&<p className="text-amber-700">Entorno de prueba Sandbox: no se cobran fondos reales.</p>}
     {info&&!info.habilitada&&<p className="text-amber-700">{info.motivo||"PayPal todavía no está habilitado."}</p>}
     {info?.bloqueada&&<p className="text-amber-700">{info.bloqueada}</p>}
-    {pedido&&<div className="rounded-md bg-slate-50 p-3 text-slate-700">
+    {pedido&&<div className="rounded-sm bg-crema p-3 text-tinta-suave">
       <p>Semana {pedido.numeroSemana} · Estado: <strong>{pedido.estado}</strong></p>
       <p className="mt-1">Redes reservadas: {(pedido.redes||[]).map(redLabel).join(" · ")}</p>
       <p className="mt-1">Importe reservado: <strong>USD {Number(pedido.importe).toFixed(2)}</strong></p>
@@ -721,7 +723,7 @@ function RetornoPaypalRenovacion({alActualizar}) {
     })();
   },[alActualizar]);
   if(!resultado&&!error)return null;
-  return <div className={`mb-4 rounded-md border p-3 text-sm ${error?"border-red-200 bg-red-50 text-red-800":"border-green-200 bg-green-50 text-green-800"}`} role="status">{error||resultado}</div>;
+  return <div className={`mb-4 rounded-sm border p-3 text-sm ${error?"border-red-200 bg-red-50 text-red-800":"border-green-200 bg-green-50 text-green-800"}`} role="status">{error||resultado}</div>;
 }
 
 function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
@@ -806,23 +808,23 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
     catch { setErrorRenovacion("Seleccioná el dato y copialo manualmente."); }
   };
   const pedido = datosRenovacion?.pedido;
-  if(pedido?.metodoPago==='paypal')return <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">La semana actual se solicitó por PayPal. Para continuar el pago, seleccioná PayPal en el formulario.</p>;
+  if(pedido?.metodoPago==='paypal')return <p className="rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">La semana actual se solicitó por PayPal. Para continuar el pago, seleccioná PayPal en el formulario.</p>;
   const estados = {
     pendiente_comprobante: "Esperando comprobante", en_revision: "Comprobante en revisión",
     aprobado: "Pago aprobado", rechazado: "Comprobante rechazado · podés enviar uno nuevo",
   };
-  return <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3 text-xs">
-    {avisoRecibido && <div role="dialog" aria-modal="true" aria-label="Comprobante recibido" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-      <div className="w-full max-w-md space-y-4 rounded-md bg-white p-5 text-slate-800 shadow-xl">
+  return <div className="space-y-3 rounded-sm border border-borde bg-white p-3 text-xs">
+    {avisoRecibido && <div role="dialog" aria-modal="true" aria-label="Comprobante recibido" className="fixed inset-0 z-50 flex items-center justify-center bg-tinta/40 p-4">
+      <div className="w-full max-w-md space-y-4 rounded-sm bg-white p-5 text-tinta shadow-xl">
         <p className="text-sm font-medium">Comprobante recibido</p>
         <p className="text-xs leading-6">Recibimos tu comprobante y estamos verificando la transferencia. Cuando aprobemos el pago, te enviaremos un correo de confirmación.</p>
-        <p className="text-xs text-slate-600">La semana adicional no empieza hasta que su programación sea confirmada.</p>
+        <p className="text-xs text-tinta-suave">La semana adicional no empieza hasta que su programación sea confirmada.</p>
         <button type="button" className={BTN_PRIMARIO} onClick={() => setAvisoRecibido(false)}>Entendido</button>
       </div>
     </div>}
-    <p className="font-medium text-slate-900">Transferencia bancaria · semana adicional de 7 días</p>
-    <p className="text-slate-600">Importe: <strong>{pedido ? `$${pedido.importe.toLocaleString("es-AR")}` : seleccion === "ambas" ? "$15.000" : "$10.000"} ARS</strong>. El pago se acredita únicamente después de verificar la transferencia.</p>
-    {datosRenovacion === null && !errorRenovacion && <p className="text-slate-500">Consultando disponibilidad...</p>}
+    <p className="font-medium text-tinta">Transferencia bancaria · semana adicional de 7 días</p>
+    <p className="text-tinta-suave">Importe: <strong>{pedido ? `$${pedido.importe.toLocaleString("es-AR")}` : seleccion === "ambas" ? "$15.000" : "$10.000"} ARS</strong>. El pago se acredita únicamente después de verificar la transferencia.</p>
+    {datosRenovacion === null && !errorRenovacion && <p className="text-tinta-apagado">Consultando disponibilidad...</p>}
     {datosRenovacion && !datosRenovacion.habilitada &&
       <p role="status" className="text-amber-700">{datosRenovacion.motivo || "Los pagos reales todavía no están habilitados."}</p>}
     {datosRenovacion?.habilitada && !pedido &&
@@ -834,15 +836,15 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
         {ocupadoRenovacion ? "Preparando renovación..." : `Solicitar Semana ${(pedido.numeroSemana || 2) + 1}`}
       </button>}
     {pedido && <div className="space-y-3">
-      <div className="rounded-md bg-slate-50 px-3 py-2 text-slate-700">
+      <div className="rounded-sm bg-crema px-3 py-2 text-tinta-suave">
         <p>Estado: <strong>{estados[pedido.estado] || pedido.estado}</strong></p>
         <p className="mt-1">Redes: {(pedido.redes || []).map(redLabel).join(" · ")}</p>
         <p className="mt-1">Importe reservado: <strong>${pedido.importe.toLocaleString("es-AR")} ARS</strong></p>
       </div>
       {["pendiente_comprobante", "rechazado"].includes(pedido.estado) && datosRenovacion?.habilitada && <>
-        <details open className="rounded-md border border-slate-200 p-3">
+        <details open className="rounded-sm border border-borde p-3">
           <summary className="cursor-pointer font-medium">Entidad bancaria y datos de pago <ChevronDown size={13} className="ml-1 inline"/></summary>
-          <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+          <div className="mt-3 space-y-3 border-t border-borde pt-3">
             <CampoInfo etiqueta="Entidad bancaria" valor={datosRenovacion.cuenta?.entidad || "—"}/>
             <CampoInfo etiqueta="Titular" valor={datosRenovacion.cuenta?.titular || "—"}/>
             {[["CBU / CVU", datosRenovacion.cuenta?.cbuCvu], ["Alias", datosRenovacion.cuenta?.alias]].map(([etiqueta, valor]) =>
@@ -852,22 +854,22 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
               </div>)}
           </div>
         </details>
-        <p className="text-slate-600">Transferí exactamente <strong>${pedido.importe.toLocaleString("es-AR")} ARS</strong> y después adjuntá tu comprobante.</p>
+        <p className="text-tinta-suave">Transferí exactamente <strong>${pedido.importe.toLocaleString("es-AR")} ARS</strong> y después adjuntá tu comprobante.</p>
         <label className="block font-medium">Comprobante de transferencia (JPG, PNG o PDF, máximo 8 MB)
           <input type="file" accept="image/jpeg,image/png,application/pdf"
-            className="mt-2 block w-full rounded-md border border-dashed border-slate-200 p-3 text-xs"
+            className="mt-2 block w-full rounded-sm border border-dashed border-borde p-3 text-xs"
             onChange={e => setArchivoRenovacion(e.target.files?.[0] || null)}/>
         </label>
         <button type="button" className={BTN_PRIMARIO} disabled={!archivoRenovacion || ocupadoRenovacion} onClick={subir}>
           {ocupadoRenovacion ? "Enviando comprobante..." : "Ya pagué · enviar comprobante"}
         </button>
       </>}
-      {pedido.estado === "en_revision" && <p className="text-slate-600">Estamos verificando el comprobante. No hace falta enviarlo otra vez.</p>}
+      {pedido.estado === "en_revision" && <p className="text-tinta-suave">Estamos verificando el comprobante. No hace falta enviarlo otra vez.</p>}
       {pedido.estado === "aprobado" && <p className="text-emerald-800">Pago aprobado. La programación de los contenidos de la semana adicional requiere una aprobación independiente; no comienza automáticamente por el pago.</p>}
     </div>}
     {mensajeRenovacion && <p role="status" className="text-emerald-700">{mensajeRenovacion}</p>}
     {errorRenovacion && <p role="alert" className="text-red-700">{errorRenovacion}</p>}
-    <p className="text-[11px] leading-5 text-slate-500">Tu comprobante se guarda de forma privada. PayPal todavía no está disponible para cobros reales.</p>
+    <p className="text-[11px] leading-5 text-tinta-apagado">Tu comprobante se guarda de forma privada. PayPal todavía no está disponible para cobros reales.</p>
   </div>;
 }
 
@@ -1191,7 +1193,7 @@ function fechaContenido(c, zona) {
   if (definitiva && Number.isFinite(Date.parse(definitiva))) {
     try {
       return new Intl.DateTimeFormat("es-AR", {
-        weekday: "long", day: "numeric", hour: "2-digit", minute: "2-digit",
+        weekday: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
         ...(zona ? { timeZone: zona } : {}),
       }).format(new Date(definitiva));
     } catch { /* Mantener el horario elegido aunque la zona sea inválida. */ }
@@ -1199,7 +1201,7 @@ function fechaContenido(c, zona) {
   // El cliente ya eligió un día y una hora. No inventar un número de día
   // hasta que Administración confirme la fecha concreta.
   if (c.diaPreferido && c.horaLocalPreferida) {
-    return `${c.diaPreferido} · ${c.horaLocalPreferida}`;
+    return `${c.diaPreferido} · ${a12h(c.horaLocalPreferida)}`;
   }
   return "Horario pendiente";
 }
@@ -1218,15 +1220,15 @@ function infoPersonal(datos, pedido) {
   const pedidos = Array.isArray(datos?.pedidos) ? datos.pedidos : [];
   const pedidoPrincipal = pedidos[0];
   const personal = infoPersonal({...datos,perfil:detallesPanel.perfil||datos?.perfil||datos?.usuario?.perfil}, pedidoPrincipal);
-  return <main className="min-h-[76vh] bg-[#f6f7f9] px-3 py-7 text-slate-800 sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
+  return <main className="min-h-[76vh] bg-[#f6f7f9] px-3 py-7 text-tinta sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
     <RetornoPaypalRenovacion alActualizar={setRenovacionReal}/>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&display=swap" />
     <div className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-xs font-medium tracking-wide text-orange-700">Comunidad Semanal</p>
-          <h1 className="text-xl font-medium text-slate-950 sm:text-2xl">Bienvenido a tu panel privado</h1>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
+          <p className="mb-1 text-xs font-medium tracking-wide text-terracota-oscuro">Comunidad Semanal</p>
+          <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-tinta-apagado">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={cargarPanel} disabled={cargando} className={BTN_SECUNDARIO}><RefreshCw size={13}/> Actualizar</button>
@@ -1235,20 +1237,20 @@ function infoPersonal(datos, pedido) {
         </div>
       </header>
 
-      {cargando && <div className={`${CARD} p-5 text-xs text-slate-500`}>Cargando tu panel...</div>}
-      {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">{error}</div>}
-      {mensaje && <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">{mensaje}</div>}
+      {cargando && <div className={`${CARD} p-5 text-xs text-tinta-apagado`}>Cargando tu panel...</div>}
+      {error && <div role="alert" className="rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">{error}</div>}
+      {mensaje && <div role="status" className="rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">{mensaje}</div>}
       {!cargando && !error && (!datos || !datos.autenticado) && <section className={`${CARD} p-5`}>
         <h2 className="text-sm font-medium">Accedé a tu cuenta</h2>
-        <p className="mt-1 text-xs leading-5 text-slate-500">Para ingresar a tu panel, solicitá un nuevo código de seis dígitos desde Iniciar sesión.</p>
+        <p className="mt-1 text-xs leading-5 text-tinta-apagado">Para ingresar a tu panel, solicitá un nuevo código de seis dígitos desde Iniciar sesión.</p>
         <Link to={`${BASE}?acceso=ingreso`} className={`${BTN_PRIMARIO} mt-3`}>Iniciar sesión <ArrowRight size={13}/></Link>
       </section>}
 
       {!cargando && datos?.autenticado && <>
         <section className={`${CARD} overflow-hidden`} aria-label="Datos personales">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-2"><UserRound size={16} className="text-orange-600"/><h2 className="text-sm font-medium">Datos personales</h2></div>
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span>
+          <div className="flex items-center justify-between border-b border-borde px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2"><UserRound size={16} className="text-terracota"/><h2 className="text-sm font-medium">Datos personales</h2></div>
+            <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span>
           </div>
           <div className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2 sm:p-5">
             <CampoInfo etiqueta="Email confirmado" valor={datos.email || "—"}/>
@@ -1256,7 +1258,7 @@ function infoPersonal(datos, pedido) {
             <CampoInfo etiqueta="Nombre emprendimiento" valor={personal.emprendimiento}/>
             <CampoInfo etiqueta="WhatsApp" valor={personal.whatsapp}/>
             <CampoInfo etiqueta="País" valor={personal.pais}/>
-            {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-orange-700 underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
+            {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-terracota-oscuro underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
           </div>
         </section>
 
@@ -1265,21 +1267,21 @@ function infoPersonal(datos, pedido) {
         {pedidos.length === 0 ? <>
           <section className={`${CARD} space-y-3 p-4`}>
             <h2 className="text-sm font-medium">Cuentas</h2>
-            <p className="text-xs leading-5 text-slate-500">Facebook e Instagram estarán disponibles para conectar después de preparar tu primera semana.</p>
+            <p className="text-xs leading-5 text-tinta-apagado">Facebook e Instagram estarán disponibles para conectar después de preparar tu primera semana.</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              {["facebook","instagram"].map(red => <div key={red} className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                <LogoRed red={red} size={20}/><span className="text-xs font-medium">{redLabel(red)}</span><span className="ml-auto text-[11px] text-slate-500">Sin conectar</span>
+              {["facebook","instagram"].map(red => <div key={red} className="flex items-center gap-2 rounded-sm border border-borde bg-crema px-3 py-2">
+                <LogoRed red={red} size={20}/><span className="text-xs font-medium">{redLabel(red)}</span><span className="ml-auto text-[11px] text-tinta-apagado">Sin conectar</span>
               </div>)}
             </div>
           </section>
           <section className={`${CARD} space-y-3 p-4`}>
             <h2 className="text-sm font-medium">Programá tu primera semana</h2>
-            <p className="text-xs leading-5 text-slate-500">Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas.</p>
+            <p className="text-xs leading-5 text-tinta-apagado">Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas.</p>
             <button type="button" className={BTN_PRIMARIO} onClick={() => setConfigurando(v=>!v)}>
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <EditorPrimeraSemana perfil={detallesPanel.perfil || datos.perfil || {}} email={datos.email} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} />}
+          {configurando && <EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} />}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
@@ -1303,18 +1305,18 @@ function infoPersonal(datos, pedido) {
           const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
           return <article key={p.pedidoId} className="space-y-5">
             <section className={`${CARD} p-4 sm:p-5`} aria-label="Cuentas">
-              <div className="mb-4"><h2 className="text-sm font-medium">Cuentas</h2><p className="mt-1 text-xs leading-5 text-slate-500">{redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig)) ? "Tus cuentas están conectadas. Ahora podemos publicar automáticamente tu contenido programado." : "Conectá las cuentas seleccionadas después de preparar tu primera semana."}</p></div>
+              <div className="mb-4"><h2 className="text-sm font-medium">Cuentas</h2><p className="mt-1 text-xs leading-5 text-tinta-apagado">{redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig)) ? "Tus cuentas están conectadas. Ahora podemos publicar automáticamente tu contenido programado." : "Conectá las cuentas seleccionadas después de preparar tu primera semana."}</p></div>
               {redes.length ? redes.map((red) => {
                 const conexion = red === "facebook" ? facebook : ig;
                 const conectada = Boolean(conexion);
-                return <div key={red} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 py-3 first:border-t-0">
+                return <div key={red} className="flex flex-wrap items-center justify-between gap-3 border-t border-borde py-3 first:border-t-0">
                   <div className="flex min-w-0 items-center gap-3">
                     <LogoRed red={red} size={25}/>
-                    <div className="min-w-0"><p className="text-xs font-medium text-slate-800">{redLabel(red)}</p>
-                    {conectada ? <><p className="max-w-xs truncate text-xs text-slate-600">{red === "facebook" ? conexion.nombre || "Página conectada" : `@${conexion.usuario}`}</p>
-                      {conexion.pageId && <p className="text-[11px] text-slate-500">ID: {conexion.pageId}</p>}
-                      <p className="text-[11px] text-slate-500">Estado: conectada</p></>
-                      : <p className="text-[11px] text-slate-500">{red === "instagram" && instagramError ? "Estado de conexión no disponible" : "Sin conectar"}</p>}
+                    <div className="min-w-0"><p className="text-xs font-medium text-tinta">{redLabel(red)}</p>
+                    {conectada ? <><p className="max-w-xs truncate text-xs text-tinta-suave">{red === "facebook" ? conexion.nombre || "Página conectada" : `@${conexion.usuario}`}</p>
+                      {conexion.pageId && <p className="text-[11px] text-tinta-apagado">ID: {conexion.pageId}</p>}
+                      <p className="text-[11px] text-tinta-apagado">Estado: conectada</p></>
+                      : <p className="text-[11px] text-tinta-apagado">{red === "instagram" && instagramError ? "Estado de conexión no disponible" : "Sin conectar"}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1323,7 +1325,7 @@ function infoPersonal(datos, pedido) {
                       {((red === "facebook" && accionFacebook === p.pedidoId) || (red === "instagram" && accionInstagram === p.pedidoId)) ? "Conectando..." : "Conectar"}
                     </button>}
                     {conectada && <button type="button"
-                      className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-sm border border-borde bg-white px-2.5 py-1.5 text-xs font-medium text-tinta-suave hover:bg-crema disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={p.estadoServicio !== "sin_activar" || Boolean(accionInstagram || accionFacebook)}
                       title={p.estadoServicio === "sin_activar" ? "Desconectar cuenta" : "No podés desconectar mientras haya una semana activa o publicaciones pendientes."}
                       onClick={() => red === "facebook" ? desconectarFacebook(p.pedidoId) : desconectarInstagram(p.pedidoId)}>
@@ -1331,14 +1333,14 @@ function infoPersonal(datos, pedido) {
                     </button>}
                   </div>
                 </div>;
-              }) : <p className="text-xs text-slate-500">Todavía no hay redes elegidas para este pedido.</p>}
+              }) : <p className="text-xs text-tinta-apagado">Todavía no hay redes elegidas para este pedido.</p>}
               {instagramError && redes.includes("instagram") && <p className="mt-2 text-[11px] text-amber-700">Estado de Instagram temporalmente no disponible: {instagramError}</p>}
             </section>
 
             <section className={`${CARD} overflow-hidden`} aria-label="Resumen de prueba gratuita">
-              <div className="border-b border-orange-100 bg-orange-50/70 px-4 py-3 sm:px-5">
+              <div className="border-b border-terracota-suave bg-terracota-suave/70 px-4 py-3 sm:px-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><h2 className="text-sm font-medium">{p.modalidad === "prueba_gratuita" ? "Semana 1" : "Resumen de tu plan"}</h2><p className="mt-0.5 text-[11px] text-slate-500">{p.modalidad === "prueba_gratuita" ? "Prueba gratuita" : "Plan contratado"}</p></div>
+                  <div><h2 className="text-sm font-medium">{p.modalidad === "prueba_gratuita" ? "Semana 1" : "Resumen de tu plan"}</h2><p className="mt-0.5 text-[11px] text-tinta-apagado">{p.modalidad === "prueba_gratuita" ? "Prueba gratuita" : "Plan contratado"}</p></div>
                   <Etiqueta valor={p.estadoServicio}/>
                 </div>
               </div>
@@ -1350,8 +1352,8 @@ function infoPersonal(datos, pedido) {
                 {pruebaActiva && prueba?.inicioEn && <CampoInfo etiqueta="Desde" valor={fechaLocal(prueba.inicioEn, detalle?.zonaHoraria)}/>}
                 {pruebaActiva && prueba?.finEn && <CampoInfo etiqueta="Hasta" valor={fechaLocal(prueba.finEn, detalle?.zonaHoraria)}/>}
               </div>
-              {total > 0 && publicados === total && <p className="border-t border-slate-100 px-4 py-3 text-xs text-emerald-700 sm:px-5">Todos tus contenidos se publicaron correctamente.</p>}
-              {p.modalidad === "prueba_gratuita" && <p className="border-t border-slate-100 px-4 py-3 text-xs leading-5 text-slate-600 sm:px-5">Te notificaremos por correo cuando tu prueba gratuita esté por finalizar.</p>}
+              {total > 0 && publicados === total && <p className="border-t border-borde px-4 py-3 text-xs text-emerald-700 sm:px-5">Todos tus contenidos se publicaron correctamente.</p>}
+              {p.modalidad === "prueba_gratuita" && <p className="border-t border-borde px-4 py-3 text-xs leading-5 text-tinta-suave sm:px-5">Te notificaremos por correo cuando tu prueba gratuita esté por finalizar.</p>}
             </section>
 
             <details className={`${CARD} group`} aria-label="Contenido programado"
@@ -1363,15 +1365,15 @@ function infoPersonal(datos, pedido) {
               }}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden sm:px-5">
                 <div><h2 className="text-sm font-medium">Contenido programado</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
+                <p className="mt-1 text-xs leading-5 text-tinta-apagado">
                   {programacionConfirmada
                     ? "Este contenido ya está programado para publicarse con la configuración que definiste."
                     : "La publicación comenzará después de la revisión y la activación de tu semana."}
-                </p></div><ChevronDown size={15} className="shrink-0 text-slate-500 transition group-open:rotate-180" />
+                </p></div><ChevronDown size={15} className="shrink-0 text-tinta-apagado transition group-open:rotate-180" />
               </summary>
-              <div className="border-t border-slate-100 p-4 sm:p-5">
+              <div className="border-t border-borde p-4 sm:p-5">
               {redes.map(red => <div key={red} className="mb-4 last:mb-0">
-                <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2"><LogoRed red={red} size={18}/><h3 className="text-xs font-medium">{redLabel(red)}</h3></div>
+                <div className="mb-2 flex items-center gap-2 border-b border-borde pb-2"><LogoRed red={red} size={18}/><h3 className="text-xs font-medium">{redLabel(red)}</h3></div>
                 <div className="space-y-1">{contenidosVistos.length ? contenidosVistos.map((c, i) => {
                   const url = enlacePublicado(c, red);
                   const estadoPorRed = c.estadoPorRed?.[red] || c.estado;
@@ -1380,15 +1382,15 @@ function infoPersonal(datos, pedido) {
                   const estadoVisible = ["rechazado", "correccion_solicitada", "error"].includes(estadoPorRed)
                     ? "Requiere corrección"
                     : sinFecha ? "Por confirmar" : undefined;
-                  return <div key={`${red}:${c.id || i}`} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-b-0 text-xs">
+                  return <div key={`${red}:${c.id || i}`} className="flex flex-wrap items-center justify-between gap-3 border-b border-borde py-3 last:border-b-0 text-xs">
                     <div className="min-w-0 space-y-1">
-                      <p className="font-medium text-slate-800">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
-                      <p className="text-[11px] text-slate-500">{fechaContenido(c, detalle?.zonaHoraria)} · hora local</p>
+                      <p className="font-medium text-tinta">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
+                      <p className="text-[11px] text-tinta-apagado">{fechaContenido(c, detalle?.zonaHoraria)} · hora local</p>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       <Etiqueta valor={estadoPorRed} texto={estadoVisible}/>
                       {red === "instagram" && estadoPorRed === "publicado" && !url &&
-                        <span className="text-[11px] text-slate-500">Enlace pendiente</span>}
+                        <span className="text-[11px] text-tinta-apagado">Enlace pendiente</span>}
                       {url && <>
                         <a href={url} target="_blank" rel="noopener noreferrer"
                           className={`${BTN_SECUNDARIO} text-[11px]`}>Ver publicación <ExternalLink size={12}/></a>
@@ -1401,10 +1403,10 @@ function infoPersonal(datos, pedido) {
                       </>}
                     </div>
                   </div>;
-                }) : <p className="py-2 text-xs text-slate-500">Todavía no hay contenidos cargados.</p>}</div>
+                }) : <p className="py-2 text-xs text-tinta-apagado">Todavía no hay contenidos cargados.</p>}</div>
               </div>)}
               {p.modalidad === "prueba_gratuita" && p.estadoServicio === "sin_activar" && (
-                <div className="mt-4 border-t border-slate-100 pt-3">
+                <div className="mt-4 border-t border-borde pt-3">
                   <button type="button" className={BTN_SECUNDARIO}
                     disabled={Boolean(consultandoSolicitud[p.pedidoId]) || Boolean(gestionandoSolicitud)}
                     onClick={() => consultarSolicitud(p.pedidoId)}>
@@ -1415,10 +1417,10 @@ function infoPersonal(datos, pedido) {
               {/* La autorización sigue siendo explícita cuando el servidor la exige.
                   No se muestra otro paso mientras el pedido está en revisión. */}
               {p.modalidad === "prueba_gratuita" && solicitud?.listaParaSolicitud && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion) && (
-                <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                <div className="mt-4 space-y-2 border-t border-borde pt-3">
                   {solicitud.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
-                  <label className="flex items-start gap-2 text-xs leading-5 text-slate-600">
-                    <input type="checkbox" className="mt-1 accent-orange-600"
+                  <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
+                    <input type="checkbox" className="mt-1 accent-terracota"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
                       onChange={e => setConfirmacionesSolicitud(v => ({ ...v, [p.pedidoId]: e.target.checked }))}/>
                     <span>Autorizo la programación y publicación de mis contenidos en las redes y horarios seleccionados.</span>
@@ -1430,13 +1432,13 @@ function infoPersonal(datos, pedido) {
               )}
               {p.modalidad === "prueba_gratuita" && solicitud?.vigente && p.estadoServicio === "sin_activar" && (
                 <div className="mt-3 flex justify-end">
-                  <button type="button" className="text-[11px] text-slate-500 underline underline-offset-2 disabled:opacity-50"
+                  <button type="button" className="text-[11px] text-tinta-apagado underline underline-offset-2 disabled:opacity-50"
                     disabled={Boolean(gestionandoSolicitud)} onClick={() => revocarSolicitud(p.pedidoId)}>Revocar autorización</button>
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
               {(archivosPorCorregir || archivosIncompletos) && (
-                <details className="mt-4 rounded-md border border-amber-200 bg-amber-50/50 p-3"
+                <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3"
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
                     {archivosPorCorregir ? "Corregir archivos observados" : "Completar archivos pendientes"}
@@ -1453,8 +1455,8 @@ function infoPersonal(datos, pedido) {
               const futura = semana.inicio && new Date(semana.inicio).getTime() > Date.now();
               return <div key={semana.id} className="space-y-3">
                 <section className={`${CARD} overflow-hidden`} aria-label={`Semana ${semana.numeroSemana}`}>
-                  <div className="flex items-center justify-between gap-3 border-b border-orange-100 bg-orange-50/70 px-4 py-3 sm:px-5">
-                    <div><h2 className="text-sm font-medium">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-slate-500">Semana pagada</p></div>
+                  <div className="flex items-center justify-between gap-3 border-b border-terracota-suave bg-terracota-suave/70 px-4 py-3 sm:px-5">
+                    <div><h2 className="text-sm font-medium">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-tinta-apagado">Semana pagada</p></div>
                     <Etiqueta valor={finalizada ? "finalizado" : futura ? "programado" : "activo"} texto={finalizada ? "Finalizada" : futura ? "Programada" : "Activo"}/>
                   </div>
                   <div className="grid grid-cols-2 gap-4 p-4 text-xs sm:p-5">
@@ -1465,22 +1467,22 @@ function infoPersonal(datos, pedido) {
                     <CampoInfo etiqueta="Desde" valor={fechaLocal(semana.inicio,semana.zonaHoraria)}/>
                     <CampoInfo etiqueta="Hasta" valor={fechaLocal(semana.fin,semana.zonaHoraria)}/>
                   </div>
-                  <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:px-5">Podés consultar el avance de tu semana contratada desde este panel.</p>
+                  <p className="border-t border-borde px-4 py-3 text-xs text-tinta-apagado sm:px-5">Podés consultar el avance de tu semana contratada desde este panel.</p>
                 </section>
                 <details className={`${CARD} group`} aria-label={`Contenido programado de Semana ${semana.numeroSemana}`}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden sm:px-5">Contenido programado · Semana {semana.numeroSemana} <ChevronDown size={13} className="group-open:rotate-180"/></summary>
-                  <div className="space-y-4 border-t border-slate-100 p-4 sm:p-5">
+                  <div className="space-y-4 border-t border-borde p-4 sm:p-5">
                     {semana.redes.map(red => <div key={red}>
                       <div className="mb-2 flex items-center gap-2"><LogoRed red={red} size={17}/><h3 className="text-xs font-medium">{redLabel(red)}</h3></div>
                       {semana.contenidos.map((c,i) => {
                         const enlace=enlacePublicado(c,red);
                         const estadoRed=c.estadoPorRed?.[red]||"programado";
-                        return <div key={`${red}-${c.id||i}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 py-3 text-xs">
+                        return <div key={`${red}-${c.id||i}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-borde py-3 text-xs">
                           <div><p className="font-medium">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
-                            <p className="text-[11px] text-slate-500">{fechaContenido(c,semana.zonaHoraria)} · hora local</p></div>
+                            <p className="text-[11px] text-tinta-apagado">{fechaContenido(c,semana.zonaHoraria)} · hora local</p></div>
                           <div className="flex flex-wrap items-center gap-2"><Etiqueta valor={estadoRed}/>
                             {estadoRed === "publicado" && enlace && <a href={enlace} target="_blank" rel="noopener noreferrer" className={`${BTN_SECUNDARIO} text-[11px]`}>Ver publicación <ExternalLink size={12}/></a>}
-                            {estadoRed === "publicado" && red === "instagram" && !enlace && <span className="text-[11px] text-slate-500">Enlace pendiente</span>}
+                            {estadoRed === "publicado" && red === "instagram" && !enlace && <span className="text-[11px] text-tinta-apagado">Enlace pendiente</span>}
                           </div>
                         </div>;
                       })}
@@ -1493,7 +1495,7 @@ function infoPersonal(datos, pedido) {
             {p.pedidoId === pedidoPrincipal?.pedidoId && renovacionReal && ["en_revision","aprobado"].includes(renovacionReal.estado) && (
               <section className={`${CARD} space-y-2 p-4 sm:p-5`} aria-label="Renovación bancaria pendiente">
                 <h2 className="text-sm font-medium">Renovación bancaria</h2>
-                <p className="text-xs text-slate-600">Pedido: <span className="break-all">{renovacionReal.pedidoId}</span></p>
+                <p className="text-xs text-tinta-suave">Pedido: <span className="break-all">{renovacionReal.pedidoId}</span></p>
                 <Etiqueta valor="verificando" texto={renovacionReal.estado === "en_revision" ? "Pendiente" : "Pago aprobado · pendiente de activación"}/>
               </section>
             )}
@@ -1503,7 +1505,7 @@ function infoPersonal(datos, pedido) {
                 {renovacionReal.configuracionEstado === "programada" ?
                   <p role="status" className="text-xs text-emerald-700">Contenidos aprobados y programados. Consultá los detalles de la semana debajo de Semana 1.</p> :
                 renovacionReal.configuracionEstado === "en_revision" ?
-                  <p role="status" className="text-xs text-slate-700">Recibimos los cuatro contenidos. Están pendientes de revisión administrativa; todavía no están programados.</p> :
+                  <p role="status" className="text-xs text-tinta-suave">Recibimos los cuatro contenidos. Están pendientes de revisión administrativa; todavía no están programados.</p> :
                   <button type="button" id="programar-semana-2" className={BTN_PRIMARIO}
                     onClick={() => setConfigurandoSemana2(v=>!v)}>
                     {configurandoSemana2 ? "Cerrar editor" : renovacionReal.configuracionEstado === "en_preparacion" ? "Continuar preparación" : "Programar nueva semana"} <ChevronDown size={13}/>
@@ -1520,9 +1522,9 @@ function infoPersonal(datos, pedido) {
                     }}/>
                 }
                 {renovacionReal.configuracionEstado === "en_revision" && Array.isArray(renovacionReal.resumenContenidos) &&
-                  <details className="rounded-md border border-slate-200 p-3">
+                  <details className="rounded-sm border border-borde p-3">
                     <summary className="cursor-pointer text-xs font-medium">Ver contenidos de la semana <ChevronDown size={13} className="inline"/></summary>
-                    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                    <div className="mt-3 space-y-2 border-t border-borde pt-3">
                       {renovacionReal.resumenContenidos.map(c=><p key={c.numero} className="text-xs">Contenido {c.numero} · {nombreTipo(c.tipo)} · {c.dia} {horaLocalEn12Horas(c.hora)}</p>)}
                     </div>
                   </details>}
@@ -1531,19 +1533,19 @@ function infoPersonal(datos, pedido) {
 
             <details className={`${CARD} group p-4 sm:p-5`}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">Configurar otra semana <ChevronDown size={13} className="group-open:rotate-180"/></summary>
-              <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
-                <p className="text-xs text-slate-500">Elegí en cuáles de tus redes vinculadas querés publicar</p>
+              <div className="mt-3 space-y-3 border-t border-borde pt-3">
+                <p className="text-xs text-tinta-apagado">Elegí en cuáles de tus redes vinculadas querés publicar</p>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[{nombre:"Facebook",red:"facebook",precio:"$10.000 · USD 10"},{nombre:"Instagram",red:"instagram",precio:"$10.000 · USD 10"},{nombre:"Ambas",red:"ambas",precio:"$15.000 · USD 15",descuento:"25% de ahorro"}].map(op=><button type="button" key={op.red}
                     disabled={op.red==="ambas" ? !(redes.includes("instagram")&&redes.includes("facebook")) : !redes.includes(op.red)}
                     title={op.red==="ambas" ? "Necesitás tener ambas redes vinculadas" : "Red no incluida en el pedido inicial"}
                     onClick={()=>setPlanSemanal(v=>({...v,[p.pedidoId]:op.red}))}
-                    className={`rounded-md border p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red?"border-orange-500 bg-orange-50":"border-slate-200 bg-slate-50"}`}>
-                    <p className="text-xs font-medium">{op.nombre}</p><p className="mt-1 text-[11px] text-slate-500">{op.red==="ambas"?"Hasta 8 publicaciones":"Hasta 4 publicaciones"}</p>
+                    className={`rounded-sm border p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red?"border-terracota bg-terracota-suave":"border-borde bg-crema"}`}>
+                    <p className="text-xs font-medium">{op.nombre}</p><p className="mt-1 text-[11px] text-tinta-apagado">{op.red==="ambas"?"Hasta 8 publicaciones":"Hasta 4 publicaciones"}</p>
                     <p className="mt-1 text-xs font-medium">{op.precio}</p>{op.descuento && <p className="text-[11px] text-emerald-700">{op.descuento}</p>}
                   </button>)}
                 </div>
-                {planSemanal[p.pedidoId] && <div className="space-y-2 border-t border-slate-100 pt-3">
+                {planSemanal[p.pedidoId] && <div className="space-y-2 border-t border-borde pt-3">
                   <p className="text-sm font-medium">Elegí como abonar</p>
                   <div className="flex flex-wrap gap-2"><button type="button" className={medioSemanal[p.pedidoId]==="transferencia"?BTN_PRIMARIO:BTN_SECUNDARIO}
                     onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"transferencia"}))}>Transferencia bancaria</button>

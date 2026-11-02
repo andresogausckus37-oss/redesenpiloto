@@ -26,9 +26,9 @@ const LOGOS = {
   facebook: "https://i.postimg.cc/rshTXS0k/Logo-de-Facebook.png",
 };
 
-const CAMPO = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100";
-const CAJA = "rounded-md border border-slate-200 bg-white p-4 sm:p-5";
-const BOTON = "inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60";
+const CAMPO = "w-full rounded-sm border border-borde bg-white px-3 py-2 text-sm font-normal text-tinta outline-none transition focus:border-terracota focus:ring-2 focus:ring-terracota-suave";
+const CAJA = "rounded-sm border border-borde bg-white p-4 sm:p-5";
+const BOTON = "inline-flex min-h-9 items-center justify-center gap-2 rounded-sm px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60";
 const PAISES_REGISTRO = [
   "Argentina", "Belice", "Bolivia", "Brasil", "Chile", "Colombia", "Costa Rica",
   "Cuba", "Ecuador", "El Salvador", "España", "Estados Unidos", "Guatemala",
@@ -39,18 +39,20 @@ const PAISES_REGISTRO = [
 function VerificacionRegistro({ sitekey, onToken, revision }) {
   const ref = useRef(null);
   const [error, setError] = useState("");
+  const [intento, setIntento] = useState(0);
   useEffect(() => {
     if (!sitekey || !ref.current) return undefined;
+    setError("");
     let montado = true, widget = null;
     const pintar = () => {
       if (!montado || !window.turnstile || !ref.current || widget !== null) return;
       try {
         widget = window.turnstile.render(ref.current, {
-          sitekey, callback: token => { if (montado) onToken(token); },
+          sitekey, callback: token => { if (montado) { setError(""); onToken(token); } },
           "expired-callback": () => { if (montado) onToken(""); },
-          "error-callback": () => { if (montado) onToken(""); },
+          "error-callback": () => { if (montado) { onToken(""); setError("No fue posible conectarse con la verificación de seguridad. Reintentá."); } },
         });
-      } catch { setError("No se pudo mostrar la verificación de Cloudflare."); }
+      } catch { setError("No se pudo mostrar la verificación de Cloudflare. Reintentá."); }
     };
     let script = document.getElementById("turnstile-comunidad-registro");
     if (!script) {
@@ -58,15 +60,23 @@ function VerificacionRegistro({ sitekey, onToken, revision }) {
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true; script.defer = true; document.head.appendChild(script);
     }
+    const alErrorScript = () => { if (montado) setError("No se pudo cargar el servicio de verificación. Revisá tu conexión a internet."); };
+    script.addEventListener("error", alErrorScript);
     if (window.turnstile) pintar();
     else script.addEventListener("load", pintar);
     return () => {
-      montado = false; script.removeEventListener("load", pintar);
+      montado = false; script.removeEventListener("load", pintar); script.removeEventListener("error", alErrorScript);
       if (widget !== null && window.turnstile) try { window.turnstile.remove(widget); } catch { /* retirado */ }
     };
-  }, [sitekey, onToken, revision]);
-  return <div className="space-y-1.5"><div ref={ref} aria-label="Verificación Cloudflare" />
-    {error && <p className="text-xs text-red-700" role="alert">{error}</p>}</div>;
+  }, [sitekey, onToken, revision, intento]);
+  return <div className="space-y-1.5">
+    <div ref={ref} aria-label="Verificación Cloudflare" />
+    {error && <div className="space-y-2">
+      <p className="text-xs text-red-700" role="alert">{error}</p>
+      <button type="button" onClick={() => { setError(""); setIntento(i => i + 1); }}
+        className="rounded-sm border border-borde px-3 py-1 text-xs font-medium text-tinta-suave transition hover:bg-borde">Reintentar verificación</button>
+    </div>}
+  </div>;
 }
 
 const TIPOS = {
@@ -106,9 +116,9 @@ function LogoRed({ red, size = 24 }) {
 function Campo({ etiqueta, children, nota }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-800">{etiqueta}</span>
+      <span className="mb-1 block text-xs font-medium text-tinta">{etiqueta}</span>
       {children}
-      {nota && <span className="mt-1 block text-xs font-normal leading-4 text-slate-500">{nota}</span>}
+      {nota && <span className="mt-1 block text-xs font-normal leading-4 text-tinta-apagado">{nota}</span>}
     </label>
   );
 }
@@ -254,14 +264,22 @@ export default function LandingPublicaciones() {
     }
   }, [location.state]);
 
+  const formularioCompleto =
+    modoAcceso === "registro" &&
+    nombreRegistro.trim().length >= 2 &&
+    emprendimientoRegistro.trim().length > 0 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
+    email.trim() === repetirEmail.trim() &&
+    /^\+?[0-9]{8,17}$/.test(whatsappRegistro.trim());
+
   useEffect(() => {
-    if (!modalRegistro || modoAcceso !== "registro" || turnstileKey) return;
+    if (!modalRegistro || modoAcceso !== "registro" || turnstileKey || !formularioCompleto) return;
     let vivo = true;
     fetch("/api/servicios/publicaciones/plan", { credentials: "same-origin", cache: "no-store" })
       .then(r => r.json()).then(d => { if (vivo) setTurnstileKey(d.turnstileSiteKey || ""); })
       .catch(() => { if (vivo) setTurnstileKey(""); });
     return () => { vivo = false; };
-  }, [modalRegistro, modoAcceso, turnstileKey]);
+  }, [modalRegistro, modoAcceso, turnstileKey, formularioCompleto]);
 
   const perfilRegistro = () => ({
     nombre: nombreRegistro.trim(), emprendimiento: emprendimientoRegistro.trim(), whatsapp: whatsappRegistro.trim(),
@@ -345,36 +363,36 @@ export default function LandingPublicaciones() {
 
   const textoVistaPrevia = (
     <div className="px-3 py-3">
-      <p className="whitespace-pre-wrap break-words text-sm font-normal leading-5 text-slate-700">
+      <p className="whitespace-pre-wrap break-words text-sm font-normal leading-5 text-tinta-suave">
         {contenido.copy.trim() || "Acá vas a ver la idea de tu publicación."}
       </p>
       {(redVisible === "instagram" ? contenido.ctaInstagram : contenido.ctaFacebook).trim() && (
-        <p className="mt-2 text-sm font-medium text-slate-800">
+        <p className="mt-2 text-sm font-medium text-tinta">
           {redVisible === "instagram" ? contenido.ctaInstagram : contenido.ctaFacebook}
         </p>
       )}
       {redVisible === "facebook" && contenido.urlFacebook.trim() && (
-        <p className="mt-1 break-all text-sm text-orange-700 underline underline-offset-2">{contenido.urlFacebook}</p>
+        <p className="mt-1 break-all text-sm text-terracota-oscuro underline underline-offset-2">{contenido.urlFacebook}</p>
       )}
       {contenido.hashtags.trim() && (
-        <p className="mt-2 break-words text-sm text-orange-700">{contenido.hashtags}</p>
+        <p className="mt-2 break-words text-sm text-terracota-oscuro">{contenido.hashtags}</p>
       )}
     </div>
   );
 
   function botonesAcceso() {
     return <div className="flex flex-wrap items-center gap-2.5">
-      <button type="button" onClick={() => abrirRegistro("registro")} className={`${BOTON} bg-orange-600 text-white hover:bg-orange-700`}>
+      <button type="button" onClick={() => abrirRegistro("registro")} className={`${BOTON} bg-terracota text-white hover:bg-terracota-oscuro`}>
         <UserRoundPlus size={15} /> Registrarme
       </button>
-      <button type="button" onClick={() => abrirRegistro("ingreso")} className={`${BOTON} border border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100`}>
+      <button type="button" onClick={() => abrirRegistro("ingreso")} className={`${BOTON} border border-terracota-suave bg-terracota-suave text-terracota-oscuro hover:bg-terracota-suave`}>
         <UserRound size={15} /> Iniciar sesión
       </button>
     </div>;
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8fa] pb-16 font-normal text-slate-900" style={{ fontFamily: 'Montserrat, ui-sans-serif, system-ui, sans-serif' }}>
+    <main className="min-h-screen bg-[#f7f8fa] pb-16 font-normal text-tinta" style={{ fontFamily: 'Montserrat, ui-sans-serif, system-ui, sans-serif' }}>
       <section className="px-4 pb-10 pt-10 sm:px-6 sm:pb-14 sm:pt-14">
         <div className="mx-auto max-w-6xl">
           <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-12">
@@ -382,34 +400,34 @@ export default function LandingPublicaciones() {
               <div className="mb-5 flex items-center gap-2">
                 <LogoRed red="instagram" size={23} />
                 <LogoRed red="facebook" size={23} />
-                <span className="ml-1 text-xs font-medium text-slate-600">Gestión automática de contenido en redes sociales</span>
+                <span className="ml-1 text-xs font-medium text-tinta-suave">Hecho para LATAM · Gestión automática para Facebook e Instagram</span>
               </div>
               <h1 className="max-w-3xl text-[30px] font-medium leading-[1.17] tracking-tight sm:text-[42px]">
-                Automatizá tus redes sociales y hacé crecer tu negocio
+                Toda tu semana de redes, programada en 20 minutos
               </h1>
-              <div className="mt-6 max-w-2xl space-y-4 text-sm font-normal leading-7 text-slate-600 sm:text-[15px]">
-                <p>¿Querés mantener tus redes sociales activas sin estar pendiente de cada publicación? Nuestra herramienta interactiva automatiza y programa tu contenido de Facebook e Instagram para que ahorres tiempo y te concentres en hacer crecer tu negocio. En solo 20 minutos podes configurar y programar tu contenido de toda la semana, de manera fácil y rápida.</p>
-                <p>Subí tus contenidos, elegí las redes sociales, el formato, los textos, hashtags, enlaces, días y horarios. ¡Nosotros nos encargamos del resto!</p>
-                <p>Ganás tiempo, mantenés tu presencia digital y generás más oportunidades para atraer clientes, llevar tráfico a tu web y potenciar tus ventas.</p>
+              <div className="mt-6 max-w-2xl space-y-4 text-sm font-normal leading-7 text-tinta-suave sm:text-[15px]">
+                <p>Diseñado para emprendedores y marcas de Latinoamérica. Sube tus fotos y videos, elige los días y horarios, y nosotros publicamos automáticamente en Facebook e Instagram. En <strong className="font-medium text-tinta">solo 20 minutos programas toda tu semana de contenido</strong>, sin estar pendiente de cada publicación.</p>
+                <p>Sin curvas de aprendizaje ni apps complicadas. Subes tu material, defines textos y hashtags, y dejas que el piloto automático haga el resto.</p>
+                <p>Ahorras horas cada semana, mantienes tu presencia digital activa y generas más oportunidades para atraer clientes y potenciar tus ventas.</p>
               </div>
               <div className="mt-7">
-                <p className="mb-3 text-base font-medium text-slate-900">¡Empezá gratis y simplificá la gestión de tus redes!</p>
+                <p className="mb-3 text-base font-medium text-tinta">Empieza gratis y simplifica la gestión de tus redes.</p>
                 {botonesAcceso()}
 
               </div>
             </div>
 
-            <div className="-mx-4 bg-orange-100 px-5 py-6 sm:mx-0 sm:rounded-md sm:p-6">
+            <div className="-mx-4 bg-terracota-suave px-5 py-6 sm:mx-0 sm:rounded-sm sm:p-6">
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-medium text-orange-700">PRUEBA GRATUITA</span>
-                <span className="text-xs font-normal text-slate-500">Facebook + Instagram</span>
+                <span className="text-xs font-medium text-terracota-oscuro">PRUEBA GRATUITA</span>
+                <span className="text-xs font-normal text-tinta-apagado">Facebook + Instagram</span>
               </div>
-              <p className="text-3xl font-medium tracking-tight text-slate-950">Probá <span className="text-orange-700">7 días gratis</span></p>
-              <p className="mt-3 text-sm leading-6 text-slate-600">Subí hasta 4 contenidos en cada red y dejá que nuestra herramienta los publique automáticamente en los días y horarios que elijas.</p>
-              <div className="my-5 border-t border-slate-100" />
-              <p className="text-sm font-medium text-slate-900">¿Querés ver cómo funciona antes de registrarte?</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Probá nuestro editor interactivo con vista previa y descubrí cómo se verán tus publicaciones en Facebook e Instagram.</p>
-              <a href="#demo" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-orange-700 hover:text-orange-800">
+              <p className="text-3xl font-medium tracking-tight text-tinta">Prueba <span className="text-terracota-oscuro">7 días gratis</span></p>
+              <p className="mt-3 text-sm leading-6 text-tinta-suave">Sube hasta 4 contenidos por red y deja que nuestra herramienta los publique automáticamente. Sin tarjeta de crédito · Cancela cuando quieras.</p>
+              <div className="my-5 border-t border-borde" />
+              <p className="text-sm font-medium text-tinta">¿Querés ver cómo funciona antes de registrarte?</p>
+              <p className="mt-2 text-sm leading-6 text-tinta-suave">Probá nuestro editor interactivo con vista previa y descubrí cómo se verán tus publicaciones en Facebook e Instagram.</p>
+              <a href="#demo" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-terracota-oscuro hover:text-terracota-oscuro">
                 Probar el editor <ArrowRight size={16} />
               </a>
             </div>
@@ -421,7 +439,7 @@ export default function LandingPublicaciones() {
         <div className="mx-auto max-w-6xl">
           <div className="mb-5 max-w-3xl">
             <h2 id="demo-titulo" className="text-xl font-medium tracking-tight sm:text-2xl">Mirá cómo se verán tus publicaciones</h2>
-            <p className="mt-1.5 text-sm leading-5 text-slate-600">
+            <p className="mt-1.5 text-sm leading-5 text-tinta-suave">
               Probá tus imágenes, videos, textos y enlaces en una vista interactiva.
             </p>
           </div>
@@ -430,33 +448,33 @@ export default function LandingPublicaciones() {
             <div className="space-y-4">
               <div className={CAJA}>
                 <h3 className="text-sm font-medium">Redes sociales</h3>
-                <p className="mt-1 text-xs text-slate-500">4 contenidos para una o para ambas redes.</p>
+                <p className="mt-1 text-xs text-tinta-apagado">4 contenidos para una o para ambas redes.</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {["instagram", "facebook"].map((red) => {
                     const activa = redes.includes(red);
                     return (
                       <button key={red} type="button" aria-pressed={activa} onClick={() => alternarRed(red)}
-                        className={`flex min-h-10 items-center justify-center gap-2 rounded-md border px-2 py-1.5 text-sm font-medium transition ${activa ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 text-slate-700 hover:border-slate-400"}`}>
+                        className={`flex min-h-10 items-center justify-center gap-2 rounded-sm border px-2 py-1.5 text-sm font-medium transition ${activa ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde text-tinta-suave hover:border-tinta-apagado"}`}>
                         <LogoRed red={red} size={21} /> {red === "instagram" ? "Instagram" : "Facebook"} {activa && <Check size={13} />}
                       </button>
                     );
                   })}
                 </div>
-                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
-                  <span className="text-slate-600">{redes.length === 1 ? "4 publicaciones · 1 red" : "8 publicaciones · 2 redes"}</span>
-                  <span className="text-base font-medium text-orange-700">$0</span>
+                <div className="mt-3 flex items-center justify-between border-t border-borde pt-3 text-xs">
+                  <span className="text-tinta-suave">{redes.length === 1 ? "4 publicaciones · 1 red" : "8 publicaciones · 2 redes"}</span>
+                  <span className="text-base font-medium text-terracota-oscuro">$0</span>
                 </div>
               </div>
 
               <div className={CAJA}>
                 <h3 className="text-sm font-medium">Tus 4 contenidos</h3>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Elegir contenido">
+                <div className="mt-3 grid grid-cols-4 gap-2" role="group" aria-label="Elegir contenido">
                   {contenidos.map((item, indice) => {
                     const Icono = TIPOS[item.tipo].icono;
                     return (
                       <button key={item.id} type="button" aria-pressed={seleccion === indice}
                         onClick={() => { setSeleccion(indice); setImagenActual(0); setMensajeArchivo(""); }}
-                        className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-medium transition ${seleccion === indice ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 text-slate-700 hover:border-slate-400"}`}>
+                        className={`flex items-center justify-center gap-1.5 rounded-sm border px-2 py-2 text-xs font-medium transition ${seleccion === indice ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde text-tinta-suave hover:border-tinta-apagado"}`}>
                         <Icono size={15} /> Contenido {indice + 1}
                       </button>
                     );
@@ -478,13 +496,13 @@ export default function LandingPublicaciones() {
                   </Campo>
                 </div>
                 <div className="mt-3">
-                  <span className="mb-1 block text-xs font-medium text-slate-800">
+                  <span className="mb-1 block text-xs font-medium text-tinta">
                     {contenido.tipo === "reel" ? "Video del reel" : contenido.tipo === "carrusel" ? "Imágenes del carrusel" : "Imagen de la publicación"}
                   </span>
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-3 text-center hover:border-orange-500">
-                    <CloudUpload size={19} className="text-orange-700" />
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center hover:border-terracota">
+                    <CloudUpload size={19} className="text-terracota-oscuro" />
                     <span className="text-xs font-medium">{contenido.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
-                    <span className="hidden text-xs text-slate-500 sm:inline">{contenido.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
+                    <span className="hidden text-xs text-tinta-apagado sm:inline">{contenido.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
                     <input className="sr-only" type="file" accept={contenido.tipo === "reel" ? "video/mp4,.mp4" : "image/jpeg,image/png,image/webp"}
                       multiple={contenido.tipo === "carrusel"} onChange={elegirArchivo} />
                   </label>
@@ -492,15 +510,15 @@ export default function LandingPublicaciones() {
                   {contenido.archivos.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {contenido.archivos.map((archivo, indice) => (
-                        <span key={archivo.url} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-xs">
+                        <span key={archivo.url} className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-borde px-2 py-1 text-xs">
                           <span className="max-w-32 truncate">{archivo.nombre}</span>
-                          <button type="button" aria-label={`Quitar ${archivo.nombre}`} className="text-slate-500 hover:text-red-700" onClick={() => quitarArchivo(indice)}><Trash2 size={13} /></button>
+                          <button type="button" aria-label={`Quitar ${archivo.nombre}`} className="text-tinta-apagado hover:text-red-700" onClick={() => quitarArchivo(indice)}><Trash2 size={13} /></button>
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
-                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                <div className="mt-4 space-y-3 border-t border-borde pt-4">
                   <Campo etiqueta="Nombre del emprendimiento">
                     <input className={`${CAMPO} h-9`} maxLength={120} value={negocio} onChange={(e) => setNegocio(e.target.value)} placeholder="ej: Redes en Piloto" />
                   </Campo>
@@ -508,8 +526,8 @@ export default function LandingPublicaciones() {
                     <textarea className={CAMPO} rows={2} maxLength={1500} value={contenido.copy}
                       onChange={(e) => actualizarContenido({ copy: e.target.value })} placeholder="Escribí el texto de tu publicación..." />
                   </Campo>
-                  <details className="rounded-md border border-slate-200 bg-white p-3">
-                    <summary className="cursor-pointer text-xs font-medium text-slate-800">CTA, URL y hashtags (opcionales)</summary>
+                  <details className="rounded-sm border border-borde bg-white p-3">
+                    <summary className="cursor-pointer text-xs font-medium text-tinta">CTA, URL y hashtags (opcionales)</summary>
                     <div className="mt-3 space-y-3">
                       {redes.includes("instagram") && <Campo etiqueta="CTA para Instagram"><input className={`${CAMPO} h-9`} maxLength={100} value={contenido.ctaInstagram} onChange={(e) => actualizarContenido({ ctaInstagram: e.target.value })} placeholder="Enlace en nuestra bio" /></Campo>}
                       {redes.includes("facebook") && <>
@@ -524,56 +542,56 @@ export default function LandingPublicaciones() {
             </div>
 
             <aside className={`${CAJA} lg:sticky lg:top-20`} aria-label="Vista previa demostrativa">
-              <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="mb-3 flex items-center justify-between border-b border-borde pb-2">
                 <h3 className="text-sm font-medium">Vista previa</h3>
-                <span className="text-xs font-normal text-slate-500">Contenido {seleccion + 1} de 4</span>
+                <span className="text-xs font-normal text-tinta-apagado">Contenido {seleccion + 1} de 4</span>
               </div>
               <div className="mb-3 flex gap-2" role="group" aria-label="Ver publicación por red">
                 {redes.map((red) => (
                   <button key={red} type="button" aria-pressed={redVisible === red} onClick={() => setVistaRed(red)}
-                    className={`flex min-h-9 flex-1 items-center justify-center gap-2 rounded-md border px-2 py-1 text-xs font-medium ${redVisible === red ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 text-slate-600"}`}>
+                    className={`flex min-h-9 flex-1 items-center justify-center gap-2 rounded-sm border px-2 py-1 text-xs font-medium ${redVisible === red ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde text-tinta-suave"}`}>
                     <LogoRed red={red} size={19} /> {red === "instagram" ? "Instagram" : "Facebook"}
                   </button>
                 ))}
               </div>
-              <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+              <div className="overflow-hidden rounded-sm border border-borde bg-white">
                 <div className="flex items-center gap-2 px-3 py-3">
                   <LogoRed red={redVisible} size={27} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-slate-900">{redVisible === "instagram" ? usuarioVisible : nombreVisible}</p>
-                    <p className="text-[11px] font-normal text-slate-500">{redVisible === "instagram" ? "Publicación de Instagram" : "Página de Facebook · Público"}</p>
+                    <p className="truncate text-xs font-medium text-tinta">{redVisible === "instagram" ? usuarioVisible : nombreVisible}</p>
+                    <p className="text-[11px] font-normal text-tinta-apagado">{redVisible === "instagram" ? "Publicación de Instagram" : "Página de Facebook · Público"}</p>
                   </div>
-                  <MoreHorizontal size={19} className="text-slate-500" />
+                  <MoreHorizontal size={19} className="text-tinta-apagado" />
                 </div>
                 {redVisible === "facebook" && textoVistaPrevia}
-                <div className="bg-slate-50 px-3 py-2">
-                  <div className={`relative mx-auto overflow-hidden rounded-md bg-slate-100 ${contenido.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
+                <div className="bg-crema px-3 py-2">
+                  <div className={`relative mx-auto overflow-hidden rounded-sm bg-borde ${contenido.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
                     style={{ aspectRatio: contenido.formato.replace(":", " / ") }}>
                     {media ? (
                       contenido.tipo === "reel"
                         ? <video key={media.url} src={media.url} controls playsInline preload="metadata" className="h-full w-full object-contain" aria-label="Vista previa del video" />
                         : <img src={media.url} alt={`Imagen ${imagenActual + 1} de la publicación`} className="h-full w-full object-contain" />
                     ) : (
-                      <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-slate-400">
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
                         <FileImage size={28} strokeWidth={1.5} />
                         <p className="text-xs leading-5">Elegí {contenido.tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
                       </div>
                     )}
                     {contenido.tipo === "carrusel" && contenido.archivos.length > 1 && <>
                       <button type="button" aria-label="Imagen anterior" onClick={() => setImagenActual((i) => (i - 1 + contenido.archivos.length) % contenido.archivos.length)}
-                        className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-1.5 text-slate-800"><ChevronLeft size={16} /></button>
+                        className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-sm bg-white/90 p-1.5 text-tinta"><ChevronLeft size={16} /></button>
                       <button type="button" aria-label="Imagen siguiente" onClick={() => setImagenActual((i) => (i + 1) % contenido.archivos.length)}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-1.5 text-slate-800"><ChevronRight size={16} /></button>
-                      <span className="absolute right-1.5 top-1.5 rounded-md bg-black/65 px-2 py-1 text-[10px] text-white">{imagenActual + 1}/{contenido.archivos.length}</span>
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm bg-white/90 p-1.5 text-tinta"><ChevronRight size={16} /></button>
+                      <span className="absolute right-1.5 top-1.5 rounded-sm bg-black/65 px-2 py-1 text-[10px] text-white">{imagenActual + 1}/{contenido.archivos.length}</span>
                     </>}
                   </div>
                 </div>
                 {redVisible === "instagram" ? (
-                  <div className="flex items-center gap-3 px-3 pt-3 text-slate-800" aria-label="Acciones orientativas de Instagram">
+                  <div className="flex items-center gap-3 px-3 pt-3 text-tinta" aria-label="Acciones orientativas de Instagram">
                     <Heart size={19} /><MessageCircle size={19} /><Send size={19} />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-around border-b border-slate-100 px-3 py-2 text-xs text-slate-500" aria-label="Acciones orientativas de Facebook">
+                  <div className="flex items-center justify-around border-b border-borde px-3 py-2 text-xs text-tinta-apagado" aria-label="Acciones orientativas de Facebook">
                     <span className="inline-flex items-center gap-1"><ThumbsUp size={15} /> Me gusta</span>
                     <span className="inline-flex items-center gap-1"><MessageCircle size={15} /> Comentar</span>
                     <span className="inline-flex items-center gap-1"><Send size={15} /> Compartir</span>
@@ -581,66 +599,66 @@ export default function LandingPublicaciones() {
                 )}
                 {redVisible === "instagram" && textoVistaPrevia}
               </div>
-              <p className="mt-2 text-xs font-normal leading-4 text-slate-500">Simulación orientativa: la apariencia final puede variar según la red social.</p>
+              <p className="mt-2 text-xs font-normal leading-4 text-tinta-apagado">Simulación orientativa: la apariencia final puede variar según la red social.</p>
             </aside>
           </div>
 
-          <div id="precios" className="scroll-mt-24 mt-8 rounded-md border border-slate-200 bg-white p-5 sm:p-6">
-            <div className="flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div id="precios" className="scroll-mt-24 mt-8 rounded-sm border border-borde bg-white p-5 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-borde pb-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-base font-medium text-slate-900">Tus primeros 7 días, gratis</h3>
-                <p className="mt-1 text-sm text-slate-600">Hasta 4 contenidos en Facebook e Instagram · 8 publicaciones en total al usar ambas redes.</p>
+                <h3 className="text-base font-medium text-tinta">Tus primeros 7 días, gratis</h3>
+                <p className="mt-1 text-sm text-tinta-suave">Hasta 4 contenidos en Facebook e Instagram · 8 publicaciones en total al usar ambas redes.</p>
               </div>
-              <p className="text-3xl font-medium text-orange-600">$0</p>
+              <p className="text-3xl font-medium text-terracota">$0</p>
             </div>
-            <h3 className="mt-5 text-sm font-medium text-slate-900">Al finalizar la prueba gratuita</h3>
-            <p className="mt-1 text-xs text-slate-500">Precios previstos para una semana adicional de servicio.</p>
+            <h3 className="mt-5 text-sm font-medium text-tinta">Al finalizar la prueba gratuita</h3>
+            <p className="mt-1 text-xs text-tinta-apagado">Precios previstos para una semana adicional de servicio.</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border border-slate-200 px-4 py-3">
+              <div className="rounded-sm border border-borde px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-900">1 red <span className="font-normal text-slate-500">· 1 semana</span></p>
+                  <p className="text-sm font-medium text-tinta">1 red <span className="font-normal text-tinta-apagado">· 1 semana</span></p>
                   <div className="text-right">
-                    <p className="text-base font-medium text-slate-900">$10.000 ARS</p>
-                    <p className="text-xs text-slate-600">USD 10</p>
+                    <p className="text-base font-medium text-tinta">$10.000 ARS</p>
+                    <p className="text-xs text-tinta-suave">USD 4</p>
                   </div>
                 </div>
               </div>
-              <div className="rounded-md border border-slate-200 px-4 py-3">
+              <div className="rounded-sm border border-borde px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-900">2 redes <span className="font-normal text-slate-500">· 1 semana</span></p>
+                  <p className="text-sm font-medium text-tinta">2 redes <span className="font-normal text-tinta-apagado">· 1 semana</span></p>
                   <div className="text-right">
-                    <p className="text-base font-medium text-slate-900">$15.000 ARS</p>
-                    <p className="text-xs text-slate-600">USD 15</p>
+                    <p className="text-base font-medium text-tinta">$15.000 ARS</p>
+                    <p className="text-xs text-tinta-suave">USD 6</p>
                   </div>
                 </div>
               </div>
             </div>
-            <p className="mt-4 text-xs font-normal leading-5 text-slate-500">
+            <p className="mt-4 text-xs font-normal leading-5 text-tinta-apagado">
               Te avisaremos por correo cuando esté por finalizar tu prueba. Si querés continuar, podrás contratar una semana desde tu panel privado. No se realizará ningún cobro automático.
             </p>
           </div>
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-xl text-sm font-medium text-slate-800">¡Empezá gratis y simplificá la gestión de tus redes!</p>
+            <p className="max-w-xl text-sm font-medium text-tinta">Empieza gratis y simplifica la gestión de tus redes.</p>
             {botonesAcceso()}
           </div>
         </div>
       </section>
 
       {modalRegistro && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-3 py-4"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-tinta/50 px-3 py-4"
           onMouseDown={e => { if (e.target === e.currentTarget) setModalRegistro(false); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="registro-titulo"
-            className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-md bg-white p-4 shadow-xl sm:p-5">
+            className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-sm bg-white p-4 shadow-xl sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2"><Mail size={18} className="text-orange-600" />
+              <div className="flex items-center gap-2"><Mail size={18} className="text-terracota" />
                 <h2 id="registro-titulo" className="text-base font-medium">{modoAcceso === "registro" ? "Crear mi cuenta" : "Iniciar sesión"}</h2>
               </div>
-              <button type="button" aria-label="Cerrar" onClick={() => setModalRegistro(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><X size={17} /></button>
+              <button type="button" aria-label="Cerrar" onClick={() => setModalRegistro(false)} className="rounded-sm p-1 text-tinta-apagado hover:bg-borde"><X size={17} /></button>
             </div>
             {pasoRegistro === "email" ? <form onSubmit={enviarCodigo} className="space-y-3">
               {modoAcceso === "registro" && <>
-                <Campo etiqueta="Nombre y apellido *"><input className={CAMPO} required autoComplete="name" maxLength={100}
+                <Campo etiqueta="Nombre y apellido *"><input className={CAMPO} required autoComplete="name" maxLength={100} placeholder="Ej.: Juan Pérez"
                   value={nombreRegistro} onChange={e => setNombreRegistro(e.target.value)} /></Campo>
                 <Campo etiqueta="Nombre del emprendimiento *"><input className={CAMPO} required maxLength={120} autoComplete="organization"
                   value={emprendimientoRegistro} onChange={e => setEmprendimientoRegistro(e.target.value)} placeholder="Ej.: Mi emprendimiento" /></Campo>
@@ -659,33 +677,38 @@ export default function LandingPublicaciones() {
                 </select></Campo>
                 <Campo etiqueta="Web o enlace principal (opcional)"><input className={CAMPO} type="text" maxLength={300}
                   value={webRegistro} onChange={e => setWebRegistro(e.target.value)} placeholder="tusitio.com" /></Campo>
-                <div className="rounded-md bg-slate-50 p-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium"><ShieldCheck size={15} className="text-orange-600"/> Verificación de seguridad</div>
-                  {turnstileKey ? <VerificacionRegistro sitekey={turnstileKey} onToken={setTurnstileToken} revision={turnstileRevision} />
-                    : <p className="text-xs text-amber-700">La verificación de Cloudflare no está disponible. No se puede completar el registro.</p>}
+                <div className="rounded-sm bg-crema p-3">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium"><ShieldCheck size={15} className="text-terracota"/> Verificación de seguridad</div>
+                  {!formularioCompleto ? (
+                    <p className="text-xs text-tinta-apagado">Completá todos los campos obligatorios para habilitar la verificación de seguridad.</p>
+                  ) : turnstileKey ? (
+                    <VerificacionRegistro sitekey={turnstileKey} onToken={setTurnstileToken} revision={turnstileRevision} />
+                  ) : (
+                    <p className="text-xs text-amber-700">Cargando verificación de seguridad…</p>
+                  )}
                 </div>
               </>}
               {errorRegistro && <p role="alert" className="text-xs text-red-700">{errorRegistro}</p>}
               <button type="submit" disabled={esperandoRegistro || (modoAcceso === "registro" && !turnstileToken)}
-                className={`${BOTON} w-full bg-orange-600 text-white hover:bg-orange-700`}>
+                className={`${BOTON} w-full bg-terracota text-white hover:bg-terracota-oscuro`}>
                 {esperandoRegistro ? "Enviando código..." : modoAcceso === "registro" ? "Registrarme" : "Enviar código de acceso"}
               </button>
-              <button type="button" className="w-full text-xs font-medium text-slate-600 underline underline-offset-2"
+              <button type="button" className="w-full text-xs font-medium text-tinta-suave underline underline-offset-2"
                 onClick={() => { setErrorRegistro(""); setModoAcceso(v => v === "registro" ? "ingreso" : "registro"); setTurnstileToken(""); }}>
                 {modoAcceso === "registro" ? "Ya tengo cuenta · Iniciar sesión" : "Crear una cuenta nueva"}
               </button>
             </form> : <form onSubmit={verificarCodigo} className="space-y-3">
-              <p className="text-sm text-slate-600">Ingresá el código de seis dígitos enviado a <span className="font-medium">{email}</span>.</p>
+              <p className="text-sm text-tinta-suave">Ingresá el código de seis dígitos enviado a <span className="font-medium">{email}</span>.</p>
               <Campo etiqueta="Código de verificación"><input className={`${CAMPO} tracking-widest`} autoComplete="one-time-code"
                 inputMode="numeric" pattern="[0-9]{6}" required maxLength={6} value={codigo}
                 onChange={e => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></Campo>
               {errorRegistro && <p role="alert" className="text-xs text-red-700">{errorRegistro}</p>}
-              <button type="submit" disabled={esperandoRegistro} className={`${BOTON} w-full bg-orange-600 text-white hover:bg-orange-700`}>
+              <button type="submit" disabled={esperandoRegistro} className={`${BOTON} w-full bg-terracota text-white hover:bg-terracota-oscuro`}>
                 {esperandoRegistro ? "Verificando..." : "Confirmar correo e ir a mi panel"}
               </button>
               <button type="button" onClick={() => { setPasoRegistro("email"); setCodigo(""); setErrorRegistro("");
                 setTurnstileToken(""); setTurnstileRevision(v => v + 1); }}
-                className="text-xs font-medium text-slate-600 underline underline-offset-2">Volver</button>
+                className="text-xs font-medium text-tinta-suave underline underline-offset-2">Volver</button>
             </form>}
           </div>
         </div>

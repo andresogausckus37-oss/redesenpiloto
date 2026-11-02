@@ -81,11 +81,26 @@ function accesoCliente(request, pedido) {
   const calculado = crypto.createHash("sha256").update(token).digest();
   return crypto.timingSafeEqual(calculado, Buffer.from(pedido.tokenAccesoHash, "hex"));
 }
+// Cache de cliente MongoDB a nivel de isolate: evita reconectar en cada request
+// (principal causa de límite de CPU durante la subida de muchos archivos).
+let _mongoClient = null;
+let _mongoUri = "";
 async function conDb(env, fn) {
   if (!env?.MONGODB_URI) lanzar("MongoDB no está configurado.", 503);
-  const client = new MongoClient(env.MONGODB_URI);
-  try { await pasoDiagnostico("MONGODB_CONEXION", () => client.connect()); return await fn(client.db(DB)); }
-  finally { await client.close().catch(() => {}); }
+  if (!_mongoClient || _mongoUri !== env.MONGODB_URI) {
+    if (_mongoClient) { _mongoClient.close().catch(() => {}); }
+    _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 1, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
+    _mongoUri = env.MONGODB_URI;
+  }
+  try {
+    await pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect());
+    return await fn(_mongoClient.db(DB));
+  } catch (e) {
+    if (e?.name === "MongoServerSelectionError" || e?.name === "MongoNetworkError" || e?.name === "MongoNotConnectedError") {
+      _mongoClient = null; _mongoUri = "";
+    }
+    throw e;
+  }
 }
 function publicacionesDelPedido(pedido) {
   return pedido.publicaciones.map(p => ({ id: p.id, tipo: p.tipo, descripcion: String(p.descripcion || "").slice(0,1500), diaPreferido: p.diaPreferido, horaLocalPreferida: p.horaLocalPreferida }));
