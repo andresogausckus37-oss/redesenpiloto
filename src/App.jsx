@@ -1,4 +1,3 @@
-
 import { useEffect } from "react";
 import {
   BrowserRouter,
@@ -8,6 +7,7 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
 
 import Navbar from "./componentes/Navbar";
 import Hero from "./componentes/Hero";
@@ -26,220 +26,78 @@ import LoginAdmin from "./paginas/LoginAdmin";
 import NavbarServicio from "./componentes/NavbarServicio";
 import FooterServicio from "./componentes/FooterServicio";
 
-/* =========================
-   REGISTRAR NUEVA VISITA
-========================= */
+// SOLO LEGALES (sin admin para evitar error de build)
+import Privacidad from "./paginas/legal/Privacidad";
+import Terminos from "./paginas/legal/Terminos";
 
 const RegistrarVisita = () => {
   const location = useLocation();
-
   useEffect(() => {
     const ruta = location.pathname;
-
-    /* NO REGISTRAR ADMIN */
-
-    if (ruta.startsWith("/admin")) {
-      return;
-    }
-
-    /* UNA SOLA VEZ POR SESIÓN */
-
-    if (
-      sessionStorage.getItem(
-        "visita_notificada"
-      )
-    ) {
-      return;
-    }
-
+    if (ruta.startsWith("/admin")) return;
+    if (sessionStorage.getItem("visita_notificada")) return;
     let pagina = ruta;
-
-    if (ruta === "/") {
-      pagina = "Inicio";
-    }
-
-    /* MARCAR ANTES DEL FETCH PARA
-       EVITAR NOTIFICACIONES DUPLICADAS */
-
-    sessionStorage.setItem(
-      "visita_notificada",
-      "true"
-    );
-
+    if (ruta === "/") pagina = "Inicio";
+    sessionStorage.setItem("visita_notificada", "true");
     fetch("/api/visitas", {
       method: "POST",
-
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
-
-      body: JSON.stringify({
-        pagina,
-        ruta,
-      }),
-    }).catch((error) => {
-      console.error(
-        "Error registrando visita:",
-        error
-      );
-    });
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pagina, ruta }),
+    }).catch(() => {});
   }, [location.pathname]);
-
   return null;
 };
-
-/* =========================
-   SCROLL ARRIBA
-========================= */
 
 const ScrollToTop = () => {
   const location = useLocation();
-
   useEffect(() => {
-    if (location.state?.scrollTo) {
-      return;
-    }
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    if (location.state?.scrollTo) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [location.pathname, location.state]);
-
   return null;
 };
 
-// Conserva el enlace antiguo para vincular pedidos existentes desde el panel.
 const RedireccionPanelAnterior = () => {
   const location = useLocation();
-
-  return (
-    <Navigate
-      replace
-      to={{
-        pathname:
-          "/servicios/publicacion-automatica/mi-panel",
-        hash: location.hash,
-      }}
-    />
-  );
+  return <Navigate replace to={{ pathname: "/publicacion-automatica/mi-panel", hash: location.hash }} />;
 };
-
-/* =========================
-   HOME
-========================= */
-
-const Home = () => {
-  const navigate = useNavigate();
+const RedireccionViejaLanding = () => {
   const location = useLocation();
-
-  const scrollTo = (id) => {
-    document
-      .getElementById(id)
-      ?.scrollIntoView({
-        behavior: "smooth",
-      });
-  };
-
-  useEffect(() => {
-    const seccion =
-      location.state?.scrollTo;
-
-    if (!seccion) {
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      document
-        .getElementById(seccion)
-        ?.scrollIntoView({
-          behavior: "smooth",
-        });
-    });
-
-    navigate("/", {
-      replace: true,
-      state: null,
-    });
-  }, [location.state, navigate]);
-
-  return (
-    <div className="min-h-screen bg-crema text-tinta">
-      <Hero scrollTo={scrollTo} />
-
-      <Servicios />
-
-      <ComoFunciona />
-
-      <Resenas />
-
-      <Disponibilidad />
-
-      <SobreMi />
-
-      <WhatsAppFlotante />
-    </div>
-  );
+  return <Navigate replace to={{ pathname: "/publicacion-automatica", search: location.search, hash: location.hash }} />;
 };
-
-/* =========================
-   CONTENIDO GLOBAL
-========================= */
+const RedireccionViejaPanel = () => {
+  const location = useLocation();
+  return <Navigate replace to={{ pathname: "/publicacion-automatica/mi-panel", search: location.search, hash: location.hash }} />;
+};
 
 const ContenidoApp = () => {
   const location = useLocation();
-
-  const esHome =
-    location.pathname === "/";
+  const esHome = location.pathname === "/";
   const esServicio =
-    location.pathname.startsWith("/servicios");
+    location.pathname.startsWith("/publicacion-automatica") ||
+    location.pathname.startsWith("/servicios/publicacion-automatica") ||
+    location.pathname.startsWith("/privacidad") ||
+    location.pathname.startsWith("/terminos") ||
+    location.pathname.startsWith("/admin");
 
   return (
     <>
       <RegistrarVisita />
-
       {esServicio ? <NavbarServicio /> : <Navbar />}
-
       <ScrollToTop />
-
-      <div
-        className={
-          esHome ? "" : "pt-20"
-        }
-      >
+      <div className={esHome ? "" : "pt-20"}>
         <Routes>
-          <Route
-            path="/"
-            element={
-              <Navigate
-                to="/servicios/publicacion-automatica"
-                replace
-              />
-            }
-          />
-
-          <Route
-            path="/servicios/publicacion-automatica"
-            element={<LandingPublicaciones />}
-          />
-
-          <Route
-            path="/servicios/publicacion-automatica/configurar"
-            element={<RedireccionPanelAnterior />}
-          />
-
-          <Route
-            path="/servicios/publicacion-automatica/mi-panel"
-            element={<PanelClientePublicaciones />}
-          />
-
-          <Route
-            path="/admin/login"
-            element={<LoginAdmin />}
-          />
+          <Route path="/" element={<Navigate to="/publicacion-automatica" replace />} />
+          <Route path="/publicacion-automatica" element={<LandingPublicaciones />} />
+          <Route path="/publicacion-automatica/mi-panel" element={<PanelClientePublicaciones />} />
+          <Route path="/publicacion-automatica/configurar" element={<RedireccionPanelAnterior />} />
+          <Route path="/privacidad" element={<Privacidad />} />
+          <Route path="/terminos" element={<Terminos />} />
+          <Route path="/admin/login" element={<LoginAdmin />} />
+          <Route path="/servicios/publicacion-automatica" element={<RedireccionViejaLanding />} />
+          <Route path="/servicios/publicacion-automatica/mi-panel" element={<RedireccionViejaPanel />} />
+          <Route path="/servicios/publicacion-automatica/configurar" element={<RedireccionPanelAnterior />} />
         </Routes>
-
         {esServicio ? <FooterServicio /> : <Footer />}
       </div>
     </>
@@ -248,9 +106,11 @@ const ContenidoApp = () => {
 
 const App = () => {
   return (
-    <BrowserRouter>
-      <ContenidoApp />
-    </BrowserRouter>
+    <HelmetProvider>
+      <BrowserRouter>
+        <ContenidoApp />
+      </BrowserRouter>
+    </HelmetProvider>
   );
 };
 

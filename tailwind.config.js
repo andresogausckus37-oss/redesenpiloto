@@ -9,23 +9,57 @@ export default {
       fontFamily: {
         sans: ["Montserrat", "ui-sans-serif", "system-ui", "sans-serif"],
       },
+      fontWeight: {
+        normal: "400",
+        medium: "500",
+      },
+      borderRadius: {
+        sm: "6px",
+      },
       colors: {
-        crema: "#FAFAF7",
+        // Fondo - crema premium
+        crema: {
+          DEFAULT: "#FFFEFB",
+          oscuro: "#F6F3EB",
+          suave: "#FDF8EE",
+        },
+        // Texto principal fintech
         tinta: {
-          DEFAULT: "#1A1D24",
-          suave: "#5B616E",
-          apagado: "#9AA1AD",
+          DEFAULT: "#0F172A",
+          suave: "#64748B",
+          apagado: "#94A3B8",
         },
+        // BORDE premium
+        borde: {
+          DEFAULT: "#E2E8F0",
+          suave: "#F1F5F9",
+        },
+        // AZUL - Botones principales fintech premium
+        azul: {
+          DEFAULT: "#1D4ED8",
+          oscuro: "#1E3A8A",
+          hover: "#1E40AF",
+          claro: "#DBEAFE",
+          "super-claro": "#EFF6FF",
+          ink: "#172554",
+        },
+        // Compat: tu clase terracota ahora renderiza AZUL (no rompe nada)
         terracota: {
-          DEFAULT: "#E85D2F",
-          oscuro: "#D14E23",
-          suave: "#FDEDE6",
+          DEFAULT: "#1D4ED8",
+          oscuro: "#1E3A8A",
+          suave: "#EFF6FF",
         },
-        borde: "#E8E6E0",
-        exito: "#15803D",
+        // Estados
+        exito: {
+          DEFAULT: "#047857",
+          bg: "#ECFDF5",
+        },
       },
       boxShadow: {
-        suave: "0 8px 30px rgba(26, 29, 36, 0.08)",
+        suave: "0 8px 30px rgba(15, 23, 42, 0.06)",
+        fintech: "0 1px 2px rgba(15,23,42,0.04), 0 4px 12px rgba(15,23,42,0.03)",
+        "fintech-hover": "0 4px 12px rgba(15,23,42,0.06), 0 12px 24px rgba(15,23,42,0.04)",
+        "boton-azul": "0 1px 2px rgba(29,78,216,0.1), 0 4px 12px rgba(29,78,216,0.15)",
       },
     },
   },

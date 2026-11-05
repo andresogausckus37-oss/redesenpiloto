@@ -1,9 +1,8 @@
 User-agent: *
 Allow: /
-
-Disallow: /admin
+Allow: /publicacion-automatica
+Allow: /publicacion-automatica/mi-panel
 Disallow: /admin/
-Disallow: /checkout/
-Disallow: /pago/
+Disallow: /api/
 
-Sitemap: https://andreshousesitter.com/sitemap.xml
+Sitemap: https://redesenpiloto.com.ar/sitemap.xml

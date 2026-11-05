@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import ArchivosPedido, { subirArchivosSemana } from "./ArchivosPedido";
 import {
   ArrowRight, ChevronDown, ExternalLink, LogOut,
+  Landmark,
   RefreshCw, ShieldCheck, UserRound, Send,
   Check, ChevronLeft, ChevronRight, CloudUpload, FileImage, Film, Images,
   Heart, MessageCircle, MoreHorizontal, ThumbsUp, Trash2,
@@ -27,17 +28,17 @@ function LogoRed({ red, size = 22 }) {
   />;
 }
 
-const BASE = "/servicios/publicacion-automatica";
+const BASE = "/publicacion-automatica";
 const API = "/api/servicios/clientes/panel";
 const API_INSTAGRAM = "/api/servicios/meta/pedidos/instagram";
 const PEDIDO_SESION = "pedido-publicaciones-transferencia-v1";
 const VALIDAR_PEDIDO = /^SER-[a-f0-9-]{36}$/i;
 const VALIDAR_CLAVE = /^[a-f0-9]{64}$/i;
-const BTN = "inline-flex min-h-8 items-center justify-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracota disabled:cursor-not-allowed disabled:opacity-50";
-const BTN_PRIMARIO = `${BTN} border border-terracota bg-terracota text-white hover:border-terracota-oscuro hover:bg-terracota-oscuro active:bg-terracota-oscuro`;
-const BTN_SECUNDARIO = `${BTN} border border-sky-300 bg-sky-100 text-sky-900 hover:border-sky-400 hover:bg-sky-200`;
-const CARD = "rounded-sm border border-borde bg-white";
-const CAMPO = "w-full min-h-9 rounded-sm border border-borde bg-white px-3 py-1.5 text-sm text-tinta outline-none focus:border-terracota focus:ring-2 focus:ring-terracota-suave";
+const BTN = "inline-flex min-h-7 items-center justify-center gap-1.5 rounded-sm px-2.5 py-1 text-[11px] font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-azul disabled:cursor-not-allowed disabled:opacity-50";
+const BTN_PRIMARIO = `${BTN} border border-azul bg-azul text-white shadow-boton-azul hover:border-azul-hover hover:bg-azul-hover active:bg-azul-oscuro`;
+const BTN_SECUNDARIO = `${BTN} border border-borde bg-white text-tinta hover:border-slate-300 hover:bg-slate-50`;
+const CARD = "rounded-sm border border-borde bg-white shadow-fintech";
+const CAMPO = "w-full min-h-9 rounded-sm border border-borde bg-white px-3 py-1.5 text-sm text-tinta outline-none focus:border-azul focus:ring-2 focus:ring-azul-super-claro";
 
 const ESTADOS = {
   pendiente: "Pendiente", confirmado: "Confirmado", conectada: "Conectada",
@@ -58,9 +59,10 @@ function estado(valor) { return ESTADOS[valor] || String(valor || "Pendiente").r
 function redLabel(red) { return red === "instagram" ? "Instagram" : "Facebook"; }
 function esAprobado(valor) { return ["aprobado", "aprobado_tecnicamente", "aprobados"].includes(valor); }
 function tonoEstado(valor) {
-  if (esAprobado(valor) || ["publicado", "conectada", "confirmado"].includes(valor)) return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (["sin_activar","pendiente","pendiente_activacion","no_requerido","pendiente_carga","pendiente_comprobante"].includes(valor)) return "border-white bg-transparent text-white";
+  if (esAprobado(valor) || ["publicado", "conectada", "confirmado","activo","activado","en_curso"].includes(valor)) return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (["rechazado", "correccion_solicitada", "error"].includes(valor)) return "border-amber-200 bg-amber-50 text-amber-800";
-  return "border-sky-200 bg-sky-50 text-sky-800";
+  return "border-azul-claro bg-azul-super-claro text-azul";
 }
 function Etiqueta({ valor, texto }) {
   return <span className={`inline-flex max-w-full items-center rounded-sm border px-2.5 py-1 text-[11px] font-medium ${tonoEstado(valor)}`}>
@@ -399,8 +401,8 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       </p>
       {ctaVisible.trim() && <p className="mt-2 text-sm font-medium text-tinta">{ctaVisible}</p>}
       {redPrevia === "facebook" && item.urlFacebook.trim() &&
-        <p className="mt-1 break-all text-sm text-terracota-oscuro underline underline-offset-2">{item.urlFacebook}</p>}
-      {item.hashtags.trim() && <p className="mt-2 break-words text-sm text-terracota-oscuro">{item.hashtags}</p>}
+        <p className="mt-1 break-all text-sm text-azul underline underline-offset-2">{item.urlFacebook}</p>}
+      {item.hashtags.trim() && <p className="mt-2 break-words text-sm text-azul">{item.hashtags}</p>}
     </div>
   );
   const sinEdicion = !!pedidoCreado || enviando;
@@ -422,7 +424,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               const activa = redes.includes(red);
               return <button type="button" key={red} aria-pressed={activa} disabled={sinEdicion || modoRenovacion}
                 onClick={() => alternarRed(red)}
-                className={`flex min-h-9 items-center justify-center gap-1.5 rounded-sm border px-2 py-1.5 text-xs font-medium transition ${activa ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
+                className={`flex min-h-9 items-center justify-center gap-1.5 rounded-sm border px-2 py-1.5 text-xs font-medium transition ${activa ? "border-azul bg-azul-suave text-azul" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
                 <LogoRed red={red} size={19} />{redLabel(red)} {activa && <Check size={13} />}
               </button>;
             })}
@@ -461,7 +463,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
                 const Icono = (TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).icono;
                 return <button type="button" key={c.id} aria-pressed={seleccionado === i}
                   onClick={() => { setSeleccionado(i); setMediaVista(0); setErrorEditor(""); }}
-                  className={`flex items-center justify-center gap-1.5 rounded-sm border px-2 py-2 text-xs font-medium transition ${seleccionado === i ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
+                  className={`flex items-center justify-center gap-1.5 rounded-sm border px-2 py-2 text-xs font-medium transition ${seleccionado === i ? "border-azul bg-azul-suave text-azul" : "border-borde bg-white text-tinta-suave hover:border-tinta-apagado"}`}>
                   <Icono size={15} /> Contenido {i + 1}
                 </button>;
               })}
@@ -490,8 +492,8 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             </div>
             <div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
-              <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-terracota"}`}>
-                <CloudUpload size={19} className="shrink-0 text-terracota-oscuro" />
+              <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
+                <CloudUpload size={19} className="shrink-0 text-azul" />
                 <span className="text-xs font-medium">{item.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
                 <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
                 <input type="file" className="sr-only" disabled={sinEdicion}
@@ -552,7 +554,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             <p className="mb-3 text-xs text-tinta-apagado">Contenido {seleccionado + 1} · Así se verá en cada red</p>
             <div className="mb-3 flex gap-2" role="group" aria-label="Ver publicación por red">
               {["instagram", "facebook"].filter(red => redes.includes(red)).map(red => <button type="button" key={red} aria-pressed={redPrevia === red} onClick={() => setRedVista(red)}
-                className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium ${redPrevia === red ? "border-terracota bg-terracota-suave text-terracota-oscuro" : "border-borde text-tinta-suave"}`}>
+                className={`flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium ${redPrevia === red ? "border-azul bg-azul-suave text-azul" : "border-borde text-tinta-suave"}`}>
                 <LogoRed red={red} size={19} /> {redLabel(red)}
               </button>)}
             </div>
@@ -823,7 +825,7 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
       </div>
     </div>}
     <p className="font-medium text-tinta">Transferencia bancaria · semana adicional de 7 días</p>
-    <p className="text-tinta-suave">Importe: <strong>{pedido ? `$${pedido.importe.toLocaleString("es-AR")}` : seleccion === "ambas" ? "$15.000" : "$10.000"} ARS</strong>. El pago se acredita únicamente después de verificar la transferencia.</p>
+    <p className="text-tinta-suave"></p>
     {datosRenovacion === null && !errorRenovacion && <p className="text-tinta-apagado">Consultando disponibilidad...</p>}
     {datosRenovacion && !datosRenovacion.habilitada &&
       <p role="status" className="text-amber-700">{datosRenovacion.motivo || "Los pagos reales todavía no están habilitados."}</p>}
@@ -854,7 +856,7 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
               </div>)}
           </div>
         </details>
-        <p className="text-tinta-suave">Transferí exactamente <strong>${pedido.importe.toLocaleString("es-AR")} ARS</strong> y después adjuntá tu comprobante.</p>
+
         <label className="block font-medium">Comprobante de transferencia (JPG, PNG o PDF, máximo 8 MB)
           <input type="file" accept="image/jpeg,image/png,application/pdf"
             className="mt-2 block w-full rounded-sm border border-dashed border-borde p-3 text-xs"
@@ -869,7 +871,7 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
     </div>}
     {mensajeRenovacion && <p role="status" className="text-emerald-700">{mensajeRenovacion}</p>}
     {errorRenovacion && <p role="alert" className="text-red-700">{errorRenovacion}</p>}
-    <p className="text-[11px] leading-5 text-tinta-apagado">Tu comprobante se guarda de forma privada. PayPal todavía no está disponible para cobros reales.</p>
+    <p className="text-[11px] leading-5 text-tinta-apagado"></p>
   </div>;
 }
 
@@ -1220,13 +1222,13 @@ function infoPersonal(datos, pedido) {
   const pedidos = Array.isArray(datos?.pedidos) ? datos.pedidos : [];
   const pedidoPrincipal = pedidos[0];
   const personal = infoPersonal({...datos,perfil:detallesPanel.perfil||datos?.perfil||datos?.usuario?.perfil}, pedidoPrincipal);
-  return <main className="min-h-[76vh] bg-[#f6f7f9] px-3 py-7 text-tinta sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
+  return <main className="min-h-[76vh] bg-crema px-3 py-7 text-tinta sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
     <RetornoPaypalRenovacion alActualizar={setRenovacionReal}/>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&display=swap" />
     <div className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-xs font-medium tracking-wide text-terracota-oscuro">Comunidad Semanal</p>
+          <p className="mb-1 text-xs font-medium tracking-wide text-azul">Panel Privado · Gestión Automática</p>
           <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-tinta-apagado">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
         </div>
@@ -1249,7 +1251,7 @@ function infoPersonal(datos, pedido) {
       {!cargando && datos?.autenticado && <>
         <section className={`${CARD} overflow-hidden`} aria-label="Datos personales">
           <div className="flex items-center justify-between border-b border-borde px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-2"><UserRound size={16} className="text-terracota"/><h2 className="text-sm font-medium">Datos personales</h2></div>
+            <div className="flex items-center gap-2"><UserRound size={16} className="text-azul"/><h2 className="text-sm font-medium">Datos personales</h2></div>
             <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span>
           </div>
           <div className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2 sm:p-5">
@@ -1258,7 +1260,7 @@ function infoPersonal(datos, pedido) {
             <CampoInfo etiqueta="Nombre emprendimiento" valor={personal.emprendimiento}/>
             <CampoInfo etiqueta="WhatsApp" valor={personal.whatsapp}/>
             <CampoInfo etiqueta="País" valor={personal.pais}/>
-            {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-terracota-oscuro underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
+            {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-azul underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
           </div>
         </section>
 
@@ -1338,9 +1340,9 @@ function infoPersonal(datos, pedido) {
             </section>
 
             <section className={`${CARD} overflow-hidden`} aria-label="Resumen de prueba gratuita">
-              <div className="border-b border-terracota-suave bg-terracota-suave/70 px-4 py-3 sm:px-5">
+              <div className="border-b border-azul-oscuro bg-azul px-4 py-3 sm:px-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><h2 className="text-sm font-medium">{p.modalidad === "prueba_gratuita" ? "Semana 1" : "Resumen de tu plan"}</h2><p className="mt-0.5 text-[11px] text-tinta-apagado">{p.modalidad === "prueba_gratuita" ? "Prueba gratuita" : "Plan contratado"}</p></div>
+                  <div><h2 className="text-sm font-medium text-white">{p.modalidad === "prueba_gratuita" ? "Semana 1" : "Resumen de tu plan"}</h2><p className="mt-0.5 text-[11px] text-white/80">{p.modalidad === "prueba_gratuita" ? "Prueba gratuita" : "Plan contratado"}</p></div>
                   <Etiqueta valor={p.estadoServicio}/>
                 </div>
               </div>
@@ -1420,7 +1422,7 @@ function infoPersonal(datos, pedido) {
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
                   {solicitud.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
                   <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
-                    <input type="checkbox" className="mt-1 accent-terracota"
+                    <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
                       onChange={e => setConfirmacionesSolicitud(v => ({ ...v, [p.pedidoId]: e.target.checked }))}/>
                     <span>Autorizo la programación y publicación de mis contenidos en las redes y horarios seleccionados.</span>
@@ -1455,8 +1457,8 @@ function infoPersonal(datos, pedido) {
               const futura = semana.inicio && new Date(semana.inicio).getTime() > Date.now();
               return <div key={semana.id} className="space-y-3">
                 <section className={`${CARD} overflow-hidden`} aria-label={`Semana ${semana.numeroSemana}`}>
-                  <div className="flex items-center justify-between gap-3 border-b border-terracota-suave bg-terracota-suave/70 px-4 py-3 sm:px-5">
-                    <div><h2 className="text-sm font-medium">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-tinta-apagado">Semana pagada</p></div>
+                  <div className="flex items-center justify-between gap-3 border-b border-azul-oscuro bg-azul px-4 py-3 sm:px-5">
+                    <div><h2 className="text-sm font-medium text-white">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-white/80">Semana pagada · 7 días</p></div>
                     <Etiqueta valor={finalizada ? "finalizado" : futura ? "programado" : "activo"} texto={finalizada ? "Finalizada" : futura ? "Programada" : "Activo"}/>
                   </div>
                   <div className="grid grid-cols-2 gap-4 p-4 text-xs sm:p-5">
@@ -1533,28 +1535,48 @@ function infoPersonal(datos, pedido) {
 
             <details className={`${CARD} group p-4 sm:p-5`}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">Configurar otra semana <ChevronDown size={13} className="group-open:rotate-180"/></summary>
-              <div className="mt-3 space-y-3 border-t border-borde pt-3">
-                <p className="text-xs text-tinta-apagado">Elegí en cuáles de tus redes vinculadas querés publicar</p>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {[{nombre:"Facebook",red:"facebook",precio:"$10.000 · USD 10"},{nombre:"Instagram",red:"instagram",precio:"$10.000 · USD 10"},{nombre:"Ambas",red:"ambas",precio:"$15.000 · USD 15",descuento:"25% de ahorro"}].map(op=><button type="button" key={op.red}
+              <div className="mt-3 space-y-4 border-t border-borde pt-4">
+                <p className="text-xs font-medium text-tinta">Elegí en cuáles de tus redes vinculadas querés publicar</p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    {nombre:"Facebook", red:"facebook", publicaciones:"Hasta 4 publicaciones", precioARS:"$10.000", precioUSD:"USD 4", descuento:""},
+                    {nombre:"Instagram", red:"instagram", publicaciones:"Hasta 4 publicaciones", precioARS:"$10.000", precioUSD:"USD 4", descuento:""},
+                    {nombre:"Ambas", red:"ambas", publicaciones:"Hasta 8 publicaciones", precioARS:"$15.000", precioUSD:"USD 6", descuento:"25% de ahorro", destacado:true},
+                  ].map(op=><button type="button" key={op.red}
                     disabled={op.red==="ambas" ? !(redes.includes("instagram")&&redes.includes("facebook")) : !redes.includes(op.red)}
                     title={op.red==="ambas" ? "Necesitás tener ambas redes vinculadas" : "Red no incluida en el pedido inicial"}
                     onClick={()=>setPlanSemanal(v=>({...v,[p.pedidoId]:op.red}))}
-                    className={`rounded-sm border p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red?"border-terracota bg-terracota-suave":"border-borde bg-crema"}`}>
-                    <p className="text-xs font-medium">{op.nombre}</p><p className="mt-1 text-[11px] text-tinta-apagado">{op.red==="ambas"?"Hasta 8 publicaciones":"Hasta 4 publicaciones"}</p>
-                    <p className="mt-1 text-xs font-medium">{op.precio}</p>{op.descuento && <p className="text-[11px] text-emerald-700">{op.descuento}</p>}
+                    className={`relative rounded-sm border p-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red ? "border-azul bg-azul-super-claro shadow-fintech ring-1 ring-azul" : "border-borde bg-white hover:border-slate-300 hover:shadow-fintech"} ${op.destacado ? "sm:-mt-1 sm:pb-5" : ""}`}>
+                    {op.destacado && <span className="absolute -top-2 left-3 rounded-sm bg-azul px-2 py-0.5 text-[10px] font-medium text-white">RECOMENDADO</span>}
+                    <p className="text-[15px] font-medium text-tinta">{op.nombre}</p>
+                    <p className="mt-2 text-[11px] text-tinta-suave">{op.publicaciones}</p>
+                    <div className="mt-3">
+                      <p className="text-[15px] font-medium text-tinta leading-tight">{op.precioARS} <span className="text-[13px] font-medium text-tinta">• {op.precioUSD} /semana</span></p>
+                      {op.descuento && <span className="mt-2 inline-flex rounded-sm bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">{op.descuento}</span>}
+                    </div>
+                    {planSemanal[p.pedidoId]===op.red && <div className="absolute right-3 top-3 h-5 w-5 rounded-full bg-azul flex items-center justify-center"><Check size={12} className="text-white"/></div>}
                   </button>)}
                 </div>
-                {planSemanal[p.pedidoId] && <div className="space-y-2 border-t border-borde pt-3">
-                  <p className="text-sm font-medium">Elegí como abonar</p>
-                  <div className="flex flex-wrap gap-2"><button type="button" className={medioSemanal[p.pedidoId]==="transferencia"?BTN_PRIMARIO:BTN_SECUNDARIO}
-                    onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"transferencia"}))}>Transferencia bancaria</button>
-                    <button type="button" className={medioSemanal[p.pedidoId]==="paypal"?BTN_PRIMARIO:BTN_SECUNDARIO}
-                    onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"paypal"}))}>PayPal</button></div>
-                  {medioSemanal[p.pedidoId]==="paypal" &&
-                    <RenovacionPaypalReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
-                  {medioSemanal[p.pedidoId]==="transferencia" &&
-                    <RenovacionTransferenciaReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
+                {planSemanal[p.pedidoId] && <div className="space-y-3 border-t border-borde pt-4">
+                  <p className="text-sm font-medium text-tinta">Elegí como abonar una semana adicional</p>
+                  <div className="flex flex-col gap-2 w-full">
+                    <button type="button" className={`flex w-full items-center justify-between gap-3 rounded-sm border px-4 py-3 text-left text-sm transition-all ${medioSemanal[p.pedidoId]==="transferencia" ? "border-azul bg-azul-super-claro" : "border-borde bg-white hover:bg-slate-50"}`}
+                      onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"transferencia"}))}>
+                      <span className="flex items-center gap-2.5 font-medium"><Landmark size={22} className="text-black"/> Transferencia bancaria</span>
+                      {medioSemanal[p.pedidoId]==="transferencia" && <Check size={16} className="text-azul"/>}
+                    </button>
+                    <button type="button" className={`flex w-full items-center justify-between gap-3 rounded-sm border px-4 py-3 text-left text-sm transition-all ${medioSemanal[p.pedidoId]==="paypal" ? "border-[#FFC439] bg-[#FFC439]/20" : "border-borde bg-white hover:bg-slate-50"}`}
+                      onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"paypal"}))}>
+                      <span className="flex items-center gap-2 font-medium"><span className="flex h-8 w-8 items-center justify-center rounded-sm bg-[#FFC439]"><img src="https://i.postimg.cc/T3NcSZ08/9309.png" alt="PayPal" className="h-4 w-auto object-contain"/></span> PayPal</span>
+                      {medioSemanal[p.pedidoId]==="paypal" && <Check size={16} className="text-tinta"/>}
+                    </button>
+                  </div>
+                  <div className="w-full">
+                    {medioSemanal[p.pedidoId]==="paypal" &&
+                      <RenovacionPaypalReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
+                    {medioSemanal[p.pedidoId]==="transferencia" &&
+                      <RenovacionTransferenciaReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
+                  </div>
                 </div>}
               </div>
             </details>
