@@ -18,6 +18,11 @@ const ID_META = /^\d{5,30}$/;
 const ORIGENES = new Set([
   "https://andreshousesitter.com",
   "https://redesenpiloto.redesenpiloto.workers.dev",
+  // Dominio actual en producción (captura: redesenpiloto.com.ar)
+  "https://redesenpiloto.com.ar",
+  "https://www.redesenpiloto.com.ar",
+  "https://redesenpiloto.com",
+  "https://www.redesenpiloto.com",
 ]);
 const PERMISOS_IG = ["pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_content_publish"];
 
@@ -393,7 +398,7 @@ async function callback(request, env, url) {
         $setOnInsert: { conectadoEn: ahora },
       }, { upsert: true });
     });
-    return vista("Instagram conectado al pedido", `La cuenta @${elegida.usuario} quedó vinculada al pedido. Redes en Piloto podrá programar y publicar de forma automática en tu cuenta, los contenidos que hayas brindado.`);
+    return vista("Instagram conectado al pedido", `La cuenta @${elegida.usuario} quedó vinculada al pedido. Redes en Piloto podrá programar y publicar de forma automática en tu cuenta todos los contenidos programados.`);
   } catch (error) {
     // Diagnóstico seguro: sin URL completa, code OAuth, correos, access tokens ni
     // mensajes de Meta (pueden contener información sensible).
