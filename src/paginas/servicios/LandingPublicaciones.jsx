@@ -40,53 +40,71 @@ const PAISES_REGISTRO = [
 // === TURNSTILE MANUAL CHECK ===
 function VerificacionManual({ sitekey, onToken, revision, habilitado }) {
   const ref = useRef(null);
+  const widgetId = useRef(null);
   const [error, setError] = useState("");
-  const [intento, setIntento] = useState(0);
-  const [mostrarWidget, setMostrarWidget] = useState(false);
   const [checkManual, setCheckManual] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
+  // Limpia el widget anterior cuando cambia revision o se desmarca
+  const limpiar = () => {
+    if (widgetId.current !== null && window.turnstile) {
+      try { window.turnstile.remove(widgetId.current); } catch {}
+    }
+    widgetId.current = null;
+    onToken("");
+  };
+
+  const pintar = () => {
+    if (!sitekey || !ref.current || widgetId.current !== null) return;
+    if (!window.turnstile) return;
+    setCargando(true);
+    try {
+      widgetId.current = window.turnstile.render(ref.current, {
+        sitekey,
+        theme: "light",
+        callback: (token) => { setError(""); setCargando(false); onToken(token); },
+        "expired-callback": () => { onToken(""); },
+        "error-callback": () => {
+          onToken("");
+          setCargando(false);
+          // Error típico: sitekey no autorizado para este dominio
+          setError("No fue posible conectar con la verificación. Verifica que este dominio esté autorizado en Cloudflare Turnstile y presiona Reintentar.");
+        },
+      });
+    } catch {
+      setCargando(false);
+      setError("No se pudo mostrar la verificación. Intenta de nuevo.");
+    }
+  };
 
   useEffect(() => {
-    if (!checkManual) {
-      setMostrarWidget(false);
-      onToken("");
-      return;
-    }
-    if (!sitekey || !ref.current || !habilitado) return undefined;
-    setError("");
-    let montado = true, widget = null;
-    const pintar = () => {
-      if (!montado || !window.turnstile || !ref.current || widget !== null) return;
-      try {
-        widget = window.turnstile.render(ref.current, {
-          sitekey,
-          callback: token => { if (montado) { setError(""); onToken(token); } },
-          "expired-callback": () => { if (montado) onToken(""); },
-          "error-callback": () => { if (montado) { onToken(""); setError("No fue posible conectar con la verificación. Reintenta."); } },
-        });
-      } catch { setError("No se pudo mostrar la verificación. Reintenta."); }
-    };
+    if (!checkManual) { limpiar(); return; }
+    if (!habilitado) return;
+    if (!sitekey) return;
+    // Si el script ya está, pintar directo. Si no, cargarlo una sola vez.
+    if (window.turnstile) { pintar(); return; }
     let script = document.getElementById("turnstile-comunidad-registro");
     if (!script) {
-      script = document.createElement("script"); script.id = "turnstile-comunidad-registro";
+      script = document.createElement("script");
+      script.id = "turnstile-comunidad-registro";
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      script.async = true; script.defer = true; document.head.appendChild(script);
+      script.async = true; script.defer = true;
+      script.onload = () => pintar();
+      script.onerror = () => setError("No se pudo cargar la verificación. Revisa tu conexión e intenta de nuevo.");
+      document.head.appendChild(script);
+    } else {
+      script.addEventListener("load", pintar, { once: true });
     }
-    const alErrorScript = () => { if (montado) setError("No se pudo cargar la verificación. Revisá tu conexión."); };
-    script.addEventListener("error", alErrorScript);
-    if (window.turnstile) pintar(); else script.addEventListener("load", pintar);
-    return () => {
-      montado = false; script.removeEventListener("load", pintar); script.removeEventListener("error", alErrorScript);
-      if (widget !== null && window.turnstile) try { window.turnstile.remove(widget); } catch {}
-    };
-  }, [sitekey, onToken, revision, intento, checkManual, habilitado, mostrarWidget]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkManual, habilitado, sitekey, revision]);
 
+  // Cuando cambia revision (después de un error de envío), resetear widget
   useEffect(() => {
-    if (checkManual && habilitado) {
-      // Pequeño delay para asegurar que el DOM del widget exista
-      const t = setTimeout(() => setMostrarWidget(true), 100);
-      return () => clearTimeout(t);
-    }
-  }, [checkManual, habilitado]);
+    if (revision > 0) { limpiar(); setError(""); setCheckManual(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revision]);
+
+  useEffect(() => () => { limpiar(); }, []);
 
   return (
     <div className="space-y-3 rounded-sm border border-borde bg-crema-suave p-3">
@@ -98,7 +116,7 @@ function VerificacionManual({ sitekey, onToken, revision, habilitado }) {
           onChange={(e) => {
             const v = e.target.checked;
             setCheckManual(v);
-            if (!v) { setMostrarWidget(false); onToken(""); setError(""); }
+            if (!v) { limpiar(); setError(""); }
           }}
           className="mt-0.5 h-4 w-4 rounded-sm border-borde text-azul focus:ring-azul-super-claro"
         />
@@ -106,26 +124,23 @@ function VerificacionManual({ sitekey, onToken, revision, habilitado }) {
           Confirmo que completé el formulario y quiero verificar que no soy un robot
         </span>
       </label>
-
       {!habilitado && (
         <p className="text-[11px] leading-4 text-tinta-apagado">Completa todos los campos obligatorios para habilitar la verificación.</p>
       )}
-
       {checkManual && habilitado && (
         <div className="space-y-2 pt-1">
-          {!mostrarWidget ? (
+          {!sitekey ? (
             <p className="text-xs text-tinta-suave">Cargando verificación segura...</p>
-          ) : sitekey ? (
+          ) : (
             <div className="rounded-sm bg-white p-2">
               <div ref={ref} aria-label="Verificación Cloudflare" />
+              {cargando && <p className="mt-1 text-xs text-tinta-suave">Cargando verificación...</p>}
             </div>
-          ) : (
-            <p className="text-xs text-amber-700">Cargando verificación...</p>
           )}
           {error && (
             <div className="space-y-2">
               <p className="text-xs text-red-700" role="alert">{error}</p>
-              <button type="button" onClick={() => { setError(""); setIntento(i => i + 1); }}
+              <button type="button" onClick={() => { setError(""); limpiar(); setTimeout(() => pintar(), 100); }}
                 className="rounded-sm border border-borde bg-white px-3 py-1 text-xs font-medium text-tinta-suave transition hover:bg-slate-50">Reintentar verificación</button>
             </div>
           )}
@@ -317,7 +332,7 @@ export default function LandingPublicaciones() {
           !PAISES_REGISTRO.includes(paisRegistro) || webRegistro.trim().length > 300) {
         setErrorRegistro("Completa tu nombre, emprendimiento, WhatsApp y país correctamente."); return;
       }
-      if (!turnstileToken) { setErrorRegistro("Marcá el check de verificación y completá el desafío de seguridad."); return; }
+      if (!turnstileToken) { setErrorRegistro("Marca el check de verificación y completá el desafío de seguridad."); return; }
     }
     setEsperandoRegistro(true); setErrorRegistro("");
     try {
@@ -407,7 +422,7 @@ export default function LandingPublicaciones() {
                   <LogoRed red="instagram" size={16} />
                   <LogoRed red="facebook" size={16} />
                 </div>
-                <span className="text-[11px] font-medium tracking-wide text-azul">HECHO PARA ARGENTINA Y LATAM · AUTOMATIZACIÓN REAL</span>
+                <span className="text-[11px] font-medium tracking-wide text-azul">DISEÑADO PARA LATAM · AUTOMATIZACIÓN REAL</span>
               </div>
 
               <h1 className="max-w-3xl text-[32px] font-medium leading-[1.1] tracking-tight sm:text-[46px]">
@@ -416,14 +431,11 @@ export default function LandingPublicaciones() {
 
               <div className="mt-6 max-w-2xl space-y-4 text-[15px] font-normal leading-7 text-tinta-suave">
                 <p className="text-[16px] leading-7 text-tinta">Deja de perder horas publicando manualmente. <strong className="font-medium text-tinta">Programa toda tu semana en una sola sesión</strong> y deja que nuestro sistema publique automáticamente en Facebook e Instagram mientras te enfocas en vender.</p>
-                <p className="mt-3 rounded-sm border border-azul-claro bg-azul-super-claro px-3 py-2.5 text-[14px] font-medium leading-6 text-azul">🌙 Tu contenido trabajando mientras duermes: configura hoy en 20 minutos y tu marca sigue activa toda la semana, incluso cuando cierras tu negocio. Presencia constante que genera confianza y ventas sin que tengas que estar conectado.</p>
-                <p className="mt-2 text-[14px] leading-6 text-tinta-suave">Ideal para emprendedores, comercios y pymes de Argentina y toda LATAM que necesitan presencia constante sin contratar agencia.</p>
                 <div className="grid gap-2 pt-1 sm:grid-cols-2">
                   <div className="flex items-center gap-2 text-sm"><div className="flex h-6 w-6 items-center justify-center rounded-sm bg-exito-bg"><Check size={14} className="text-exito" /></div> Sin apps complicadas</div>
                   <div className="flex items-center gap-2 text-sm"><div className="flex h-6 w-6 items-center justify-center rounded-sm bg-exito-bg"><Check size={14} className="text-exito" /></div> Sin curva de aprendizaje</div>
                   <div className="flex items-center gap-2 text-sm"><div className="flex h-6 w-6 items-center justify-center rounded-sm bg-exito-bg"><Check size={14} className="text-exito" /></div> Imágenes, carruseles y Reels</div>
                   <div className="flex items-center gap-2 text-sm"><div className="flex h-6 w-6 items-center justify-center rounded-sm bg-exito-bg"><Check size={14} className="text-exito" /></div> Vista previa real</div>
-                  <div className="flex items-center gap-2 text-sm"><div className="flex h-6 w-6 items-center justify-center rounded-sm bg-exito-bg"><Check size={14} className="text-exito" /></div> Soporte 100% humano, sin bots que no entienden tu problema</div>
                 </div>
               </div>
 
@@ -447,7 +459,7 @@ export default function LandingPublicaciones() {
                 <div className="mt-5 space-y-3">
                   <div className="flex items-center gap-3 rounded-sm border border-borde bg-crema-suave px-3 py-2.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white shadow-sm"><Clock size={16} className="text-azul" /></div>
-                    <div><p className="text-xs font-medium">Ahorro promedio estimado</p><p className="text-sm font-medium text-azul">+5 horas por semana</p><p className="text-[10px] text-tinta-apagado">Cálculo basado en crear, editar y publicar 8 contenidos manualmente (40 min c/u)</p></div>
+                    <div><p className="text-xs font-medium">Ahorro promedio</p><p className="text-sm font-medium text-azul">+5 horas por semana</p></div>
                   </div>
                   <div className="flex items-center gap-3 rounded-sm border border-borde bg-crema-suave px-3 py-2.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white shadow-sm"><TrendingUp size={16} className="text-exito" /></div>
@@ -471,7 +483,7 @@ export default function LandingPublicaciones() {
           <div className="mb-8 max-w-3xl">
             <div className="mb-3 inline-flex items-center gap-1.5 rounded-sm bg-white border border-borde px-2.5 py-1 text-[11px] font-medium tracking-wide text-tinta-suave"><Sparkles size={12} /> SIMULADOR INTERACTIVO</div>
             <h2 className="text-2xl font-medium tracking-tight sm:text-3xl">Diseña tu semana en minutos, visualiza como tu cliente</h2>
-            <p className="mt-3 text-sm leading-6 text-tinta-suave sm:text-[15px]">Pensado para emprendedores, comercios y pymes de Argentina y toda LATAM. Sube tu material, elige el formato y mira al instante cómo se verá en Instagram y Facebook. El mismo flujo que usarás en tu panel privado.</p>
+            <p className="mt-3 text-sm leading-6 text-tinta-suave sm:text-[15px]">Sube tu material, elige el formato y mira al instante cómo se verá en Instagram y Facebook. El mismo flujo que usarás en tu panel privado.</p>
           </div>
 
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_360px] lg:gap-8">
@@ -580,7 +592,7 @@ export default function LandingPublicaciones() {
                     ) : (
                       <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
                         <FileImage size={28} strokeWidth={1.5} />
-                        <p className="text-xs leading-5">Elige {contenido.tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
+                        <p className="text-xs leading-5">Elegí {contenido.tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
                       </div>
                     )}
                     {contenido.tipo === "carrusel" && contenido.archivos.length > 1 && <>
@@ -619,25 +631,25 @@ export default function LandingPublicaciones() {
             </div>
 
             <div className="p-6 sm:p-8">
-              <h4 className="text-sm font-medium text-tinta">Planes semanales después de la prueba — precio por 1 semana de servicio</h4>
-              <p className="mt-1 text-xs text-tinta-apagado">Precio claro por semana, no mensual. Pagas en pesos argentinos y ves el equivalente en USD. Cancela cuando quieras.</p>
+              <h4 className="text-sm font-medium text-tinta">Planes semanales después de la prueba</h4>
+              <p className="mt-1 text-xs text-tinta-apagado">Precios transparentes en dólares. Facturación semanal, cancela cuando quieras.</p>
               
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {/* Plan 1 red */}
                 <div className="group relative rounded-sm border border-borde bg-crema-suave/50 p-5 transition hover:border-slate-300 hover:bg-white hover:shadow-fintech">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-tinta">1 red social · 1 semana</p>
-                      <p className="mt-1 text-xs text-tinta-suave">Ideal para emprendedores y comercios que arrancan</p>
+                      <p className="text-sm font-medium text-tinta">1 red social</p>
+                      <p className="mt-1 text-xs text-tinta-suave">Ideal para empezar enfocado</p>
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         <span className="rounded-sm bg-white border border-borde px-2 py-0.5 text-[11px]">Instagram <em className="not-italic text-tinta-apagado">o</em> Facebook</span>
-                        <span className="rounded-sm bg-white border border-borde px-2 py-0.5 text-[11px]">4 contenidos por semana</span>
+                        <span className="rounded-sm bg-white border border-borde px-2 py-0.5 text-[11px]">4 contenidos/sem</span>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-medium text-tinta">$6.990<span className="text-xs font-normal"> ARS</span></p>
-                      <p className="text-sm font-medium text-azul">USD 4</p>
-                      <p className="mt-1 text-[11px] font-medium text-tinta-suave">por 1 semana</p>
+                      <p className="text-2xl font-medium text-azul">$4<span className="text-sm font-normal text-tinta-suave"> USD</span></p>
+                      <p className="text-xs text-tinta-apagado line-through">$10.000 ARS</p>
+                      <p className="mt-1 text-[11px] font-medium text-exito">por semana</p>
                     </div>
                   </div>
                 </div>
@@ -647,80 +659,54 @@ export default function LandingPublicaciones() {
                   <div className="absolute -top-3 left-5 rounded-sm bg-azul px-2.5 py-1 text-[11px] font-medium text-white">MÁS POPULAR · AHORRA 25%</div>
                   <div className="flex items-start justify-between gap-3 pt-2">
                     <div>
-                      <p className="text-sm font-medium text-tinta">2 redes sociales · 1 semana</p>
-                      <p className="mt-1 text-xs text-tinta-suave">Recomendado para pymes y comercios de Argentina y LATAM</p>
+                      <p className="text-sm font-medium text-tinta">2 redes sociales</p>
+                      <p className="mt-1 text-xs text-tinta-suave">Máximo alcance, mismo esfuerzo</p>
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         <span className="rounded-sm bg-azul-super-claro border border-azul-claro px-2 py-0.5 text-[11px] text-azul">Instagram + Facebook</span>
-                        <span className="rounded-sm bg-azul-super-claro border border-azul-claro px-2 py-0.5 text-[11px] text-azul">8 publicaciones por semana</span>
+                        <span className="rounded-sm bg-azul-super-claro border border-azul-claro px-2 py-0.5 text-[11px] text-azul">8 publicaciones/sem</span>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-medium text-tinta">$10.990<span className="text-xs font-normal"> ARS</span></p>
-                      <p className="text-sm font-medium text-azul">USD 6</p>
-                      <p className="mt-1 text-[11px] font-medium text-tinta-suave">por 1 semana</p>
+                      <p className="text-2xl font-medium text-azul">$6<span className="text-sm font-normal text-tinta-suave"> USD</span></p>
+                      <p className="text-xs text-tinta-apagado line-through">$15.000 ARS</p>
+                      <p className="mt-1 text-[11px] font-medium text-exito">por semana</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="mt-6 flex flex-col gap-4 rounded-sm bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="flex items-center gap-2 text-xs leading-5 text-tinta-suave"><ShieldCheck size={14} className="text-exito" /> Precio por 1 semana de servicio, no mensual. Te avisamos antes de que termine tu prueba. Sin cobros automáticos. Pagas en ARS, con referencia en USD para toda LATAM.</p>
+                <p className="flex items-center gap-2 text-xs leading-5 text-tinta-suave"><ShieldCheck size={14} className="text-exito" /> Te avisamos por correo antes de que termine tu prueba. Sin cobros ocultos. Activas tu plan solo si quieres continuar.</p>
                 <div className="shrink-0">{botonesAcceso()}</div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* SECCION PROXIMAMENTE - SLIDER LOGOS */}
-      <section className="border-y border-borde bg-white py-10 sm:py-14">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="mb-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="mb-2 inline-flex items-center gap-1.5 rounded-sm bg-azul-super-claro border border-azul-claro px-2.5 py-1 text-[11px] font-medium tracking-wide text-azul"><Zap size={12} /> PRÓXIMAMENTE</div>
-              <h2 className="text-2xl font-medium tracking-tight sm:text-3xl">Todas tus redes, en un solo lugar</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-tinta-suave">Ya trabajamos en las próximas integraciones. Conecta una vez y gestiona tu contenido sin cambiar de herramienta. Tú te enfocas en tu negocio, nosotros mantenemos tu presencia activa.</p>
-            </div>
-            <span className="rounded-sm bg-crema-suave border border-borde px-3 py-1.5 text-xs font-medium text-tinta-suave">Más de 10 plataformas en camino</span>
-          </div>
-
-          <div className="relative overflow-hidden rounded-sm border border-borde bg-crema py-6">
-            <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-crema to-transparent z-10 pointer-events-none" />
-            <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-crema to-transparent z-10 pointer-events-none" />
-            <div className="flex w-max animate-[marquee_35s_linear_infinite] items-center gap-3">
+          {/* FAQ - LANDING */}
+          <div id="faq" className="mx-auto mt-14 max-w-3xl">
+            <h2 className="text-center text-2xl font-medium tracking-tight">Preguntas frecuentes</h2>
+            <p className="mt-2 text-center text-sm text-tinta-suave">Si tu duda no está acá, escribinos por WhatsApp y te responde una persona.</p>
+            <div className="mt-8 space-y-3">
               {[
-                { nombre: "Instagram", estado: "YA DISPONIBLE", color: "bg-white border-azul text-azul" },
-                { nombre: "Facebook", estado: "YA DISPONIBLE", color: "bg-white border-azul text-azul" },
-                { nombre: "Threads", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "TikTok", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "YouTube Shorts", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "Pinterest", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "LinkedIn", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "X (Twitter)", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "Google Negocios", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "Telegram", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "Bluesky", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                // duplicado para loop infinito
-                { nombre: "Instagram", estado: "YA DISPONIBLE", color: "bg-white border-azul text-azul" },
-                { nombre: "Facebook", estado: "YA DISPONIBLE", color: "bg-white border-azul text-azul" },
-                { nombre: "Threads", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "TikTok", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "YouTube Shorts", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "Pinterest", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-                { nombre: "LinkedIn", estado: "PRÓXIMAMENTE", color: "bg-white border-borde text-tinta-suave" },
-              ].map((p, i) => (
-                <div key={i} className={`flex shrink-0 items-center gap-2 rounded-sm border px-4 py-2.5 shadow-sm ${p.color}`}>
-                  <span className="text-xs font-medium">{p.nombre}</span>
-                  <span className={`rounded-sm px-1.5 py-0.5 text-[9px] font-medium tracking-wide ${p.estado === "YA DISPONIBLE" ? "bg-azul text-white" : "bg-slate-100 text-tinta-apagado"}`}>{p.estado}</span>
-                </div>
+                { q: "¿Tengo que darte mi contraseña de Instagram o Facebook?", r: "No, nunca. Conectás tu cuenta con el botón oficial de Meta desde tu panel. Nosotros nunca vemos ni guardamos tu contraseña." },
+                { q: "¿Qué necesito para empezar?", r: "Solo tu cuenta de Instagram o Facebook conectada, 4 contenidos (fotos, videos o Reels) y elegir día y horario. Nosotros nos encargamos de publicarlos." },
+                { q: "¿Puedo cambiar el día u horario después de programar?", r: "Sí, mientras la semana no haya empezado a publicarse podés cambiar día y horario desde tu panel, sin escribirnos." },
+                { q: "¿Qué pasa si Instagram rechaza una publicación?", r: "Te avisamos en tu panel como 'Requiere atención' y te decimos qué cambiar. Por ejemplo, música con copyright en un Reel. No perdés la semana, la corregimos y la reprogramamos." },
+                { q: "¿Me cobran automáticamente cada semana?", r: "No. Cada semana la contratás vos cuando querés. No hay cobros automáticos ocultos ni suscripción que no puedas cancelar." },
+                { q: "¿Puedo cancelar cuando quiera?", r: "Sí. Desde tu panel tenés el botón 'Cancelar semana' en rojo. Si cancelás, no se publica más contenido de esa semana." },
+              ].map((item, i) => (
+                <details key={i} className="group rounded-sm border border-borde bg-white p-4 shadow-fintech">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium">
+                    {item.q}
+                    <span className="text-lg leading-none text-azul transition group-open:rotate-45">+</span>
+                  </summary>
+                  <p className="mt-3 text-sm leading-6 text-tinta-suave">{item.r}</p>
+                </details>
               ))}
             </div>
           </div>
-          
         </div>
       </section>
-
-      <style>{`@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
 
       {modalRegistro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-3 py-4" onMouseDown={e => { if (e.target === e.currentTarget) setModalRegistro(false); }}>
@@ -757,7 +743,7 @@ export default function LandingPublicaciones() {
                 {modoAcceso === "registro" ? "Ya tengo cuenta · Iniciar sesión" : "Crear una cuenta nueva"}
               </button>
             </form> : <form onSubmit={verificarCodigo} className="space-y-3">
-              <p className="text-sm text-tinta-suave">Ingresa el código de seis dígitos enviado a <span className="font-medium text-tinta">{email}</span>.</p>
+              <p className="text-sm text-tinta-suave">Ingresá el código de seis dígitos enviado a <span className="font-medium text-tinta">{email}</span>.</p>
               <Campo etiqueta="Código de verificación"><input className={`${CAMPO} tracking-widest text-center text-lg`} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" required maxLength={6} value={codigo} onChange={e => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></Campo>
               {errorRegistro && <p role="alert" className="rounded-sm bg-red-50 px-3 py-2 text-xs text-red-700">{errorRegistro}</p>}
               <button type="submit" disabled={esperandoRegistro} className={`${BOTON} w-full bg-azul text-white shadow-boton-azul hover:bg-azul-hover`}>{esperandoRegistro ? "Verificando..." : "Confirmar y entrar a mi panel"}</button>

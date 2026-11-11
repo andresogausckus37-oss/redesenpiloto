@@ -1051,6 +1051,8 @@ if (url.pathname.startsWith("/api/servicios/publicaciones/renovacion-contenidos/
 }
 
 // FASE10: PayPal usa el mismo sistema de semanas, sin tocar cron de tienda ni clientes.
+// /renovacion-paypal/cancelar ya pasa por startsWith y lo resuelve ejecutarRenovacionPaypal().
+// /renovacion-transferencia/cancelar se agregó abajo al listado explícito para que también llegue a su módulo.
 if (url.pathname.startsWith("/api/servicios/publicaciones/renovacion-paypal")) {
   if (url.pathname !== "/api/servicios/publicaciones/renovacion-paypal/webhook") {
     const exceso = await comprobarLimiteServicio(request, env, request.method === "POST"
@@ -1061,7 +1063,8 @@ if (url.pathname.startsWith("/api/servicios/publicaciones/renovacion-paypal")) {
 }
 if (url.pathname === "/api/servicios/publicaciones/renovacion-transferencia" ||
     url.pathname === "/api/servicios/publicaciones/renovacion-transferencia/crear" ||
-    url.pathname === "/api/servicios/publicaciones/renovacion-transferencia/comprobante") {
+    url.pathname === "/api/servicios/publicaciones/renovacion-transferencia/comprobante" ||
+    url.pathname === "/api/servicios/publicaciones/renovacion-transferencia/cancelar") {
   const exceso = await comprobarLimiteServicio(request, env,
     url.pathname.endsWith("/comprobante") ? "SERVICIO_LIMITE_COMPROBANTES" :
     request.method === "POST" ? "SERVICIO_LIMITE_PEDIDOS" : "SERVICIO_LIMITE_CONSULTAS");

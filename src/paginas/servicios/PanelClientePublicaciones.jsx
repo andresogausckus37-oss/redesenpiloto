@@ -3,10 +3,9 @@ import { Link } from "react-router-dom";
 import ArchivosPedido, { subirArchivosSemana } from "./ArchivosPedido";
 import {
   ArrowRight, ChevronDown, ExternalLink, LogOut,
-  Landmark,
   RefreshCw, ShieldCheck, UserRound, Send,
   Check, ChevronLeft, ChevronRight, CloudUpload, FileImage, Film, Images,
-  Heart, MessageCircle, MoreHorizontal, ThumbsUp, Trash2,
+  Heart, MessageCircle, MoreHorizontal, ThumbsUp, Trash2, Landmark,
 } from "lucide-react";
 
 // Diseño del panel de cliente. Las rutas, los contratos de API y las autorizaciones
@@ -28,7 +27,7 @@ function LogoRed({ red, size = 22 }) {
   />;
 }
 
-const BASE = "/publicacion-automatica";
+const BASE = "/servicios/publicacion-automatica";
 const API = "/api/servicios/clientes/panel";
 const API_INSTAGRAM = "/api/servicios/meta/pedidos/instagram";
 const PEDIDO_SESION = "pedido-publicaciones-transferencia-v1";
@@ -59,7 +58,7 @@ function estado(valor) { return ESTADOS[valor] || String(valor || "Pendiente").r
 function redLabel(red) { return red === "instagram" ? "Instagram" : "Facebook"; }
 function esAprobado(valor) { return ["aprobado", "aprobado_tecnicamente", "aprobados"].includes(valor); }
 function tonoEstado(valor) {
-  if (["sin_activar","pendiente","pendiente_activacion","no_requerido","pendiente_carga","pendiente_comprobante"].includes(valor)) return "border-white bg-transparent text-white";
+  if (["sin_activar","pendiente","pendiente_activacion","no_requerido"].includes(valor)) return "border-white/30 bg-white/10 text-white";
   if (esAprobado(valor) || ["publicado", "conectada", "confirmado","activo","activado","en_curso"].includes(valor)) return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (["rechazado", "correccion_solicitada", "error"].includes(valor)) return "border-amber-200 bg-amber-50 text-amber-800";
   return "border-azul-claro bg-azul-super-claro text-azul";
@@ -139,12 +138,13 @@ const ZONAS_DISPONIBLES = [
 
 // Configuración de la semana dentro del panel: no se navega a otra página.
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const HORAS_SEMANA = ["09:00", "10:00", "12:00", "14:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+const HORAS_SEMANA = ["08:00 a. m.", "09:00 a. m.", "10:00 a. m.", "11:00 a. m.", "12:00 p. m.", "01:00 p. m.", "02:00 p. m.", "03:00 p. m.", "05:00 p. m.", "06:00 p. m.", "07:00 p. m.", "08:00 p. m.", "09:00 p. m.", "10:00 p. m."];
+const a24h = (h12) => { const mm = /^(\d{1,2}):(\d{2})\s*([ap])\.\s*m\./i.exec(h12 || ""); if (!mm) return h12; let hh = Number(mm[1]); const esPM = mm[3].toLowerCase() === "p"; if (esPM && hh !== 12) hh += 12; if (!esPM && hh === 12) hh = 0; return String(hh).padStart(2, "0") + ":" + mm[2]; };
 // Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
 const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
 const SEMANA_BASE = [
-  ["reel", "Lunes", "18:00"], ["carrusel", "Miércoles", "18:00"],
-  ["imagen", "Viernes", "18:00"], ["reel", "Domingo", "18:00"],
+  ["reel", "Lunes", "06:00 p. m."], ["carrusel", "Miércoles", "06:00 p. m."],
+  ["imagen", "Viernes", "06:00 p. m."], ["reel", "Domingo", "06:00 p. m."],
 ];
 const crearSemana = () => SEMANA_BASE.map(([tipo, dia, hora], i) => ({
   id: `contenido-${i + 1}`, tipo, dia, hora,
@@ -163,7 +163,7 @@ function VistaArchivoLocal({ archivo, tipo }) {
   if (!archivo || !url) return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
       <FileImage size={28} strokeWidth={1.5} />
-      <p className="text-xs leading-5">Elegí {tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
+      <p className="text-xs leading-5">Elige {tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
     </div>
   );
   return tipo === "reel"
@@ -263,9 +263,27 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   async function programar(evento) {
     evento.preventDefault();
     if (envioEnCurso.current || !habilitada || !datosCompletos) return;
-    if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
+    if (!redes.length) { setErrorEditor("Elige al menos una red."); return; }
     if (contenidos.some(c => c.archivos.length < (c.tipo === "carrusel" ? 2 : 1))) {
-      setErrorEditor("Elegí los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
+      setErrorEditor("Elige los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
+    }
+    // Validación precisa por contenido: así el cliente sabe QUÉ falta en QUÉ contenido,
+    // en vez de un error genérico del servidor.
+    for (let i = 0; i < contenidos.length; i++) {
+      const c = contenidos[i];
+      const n = `Contenido ${i + 1}`;
+      if (!c.descripcion || !c.descripcion.trim()) { setSeleccionado(i); setErrorEditor(`${n}: falta el texto / copy de la publicación. Escríbelo en "Texto y detalles de la publicación".`); return; }
+      if (c.descripcion.trim().length < 10) { setSeleccionado(i); setErrorEditor(`${n}: el texto es muy corto. Escribe al menos 10 caracteres.`); return; }
+      if (c.tipo === "reel" && c.formato !== "9:16") { setSeleccionado(i); setErrorEditor(`${n}: el Reel debe ser vertical 9:16.`); return; }
+      if (c.tipo !== "reel" && !["4:5", "1:1"].includes(c.formato)) { setSeleccionado(i); setErrorEditor(`${n}: la imagen / carrusel debe ser 4:5 o 1:1.`); return; }
+      if (!DIAS_SEMANA.includes(c.dia)) { setSeleccionado(i); setErrorEditor(`${n}: elige un día de la semana.`); return; }
+      if (!HORAS_SEMANA.includes(c.hora)) { setSeleccionado(i); setErrorEditor(`${n}: elige un horario de la lista.`); return; }
+      const urlFB = (c.urlFacebook || "").trim();
+      if (urlFB) {
+        const urlParaValidar = /^https?:\/\//i.test(urlFB) ? urlFB : `https://${urlFB}`;
+        try { new URL(urlParaValidar); } catch { setSeleccionado(i); setErrorEditor(`${n}: la URL para Facebook no es válida. Usa formato minegocio.com.ar o https://minegocio.com.ar`); return; }
+      }
+      if (c.hashtags && c.hashtags.trim() && !c.hashtags.trim().split(/\s+/).every(h => h.startsWith("#"))) { setSeleccionado(i); setErrorEditor(`${n}: los hashtags deben empezar con #. Ej: #redesenpiloto #minegocio`); return; }
     }
     envioEnCurso.current = true;
     setEnviando(true);
@@ -274,7 +292,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     let id = pedidoCreado;
     try {
       const publicaciones = contenidos.map(c => ({
-        id: c.id, tipo: c.tipo, formato: c.formato, dia: c.dia, hora: c.hora,
+        id: c.id, tipo: c.tipo, formato: c.formato, dia: c.dia, hora: a24h(c.hora),
         descripcion: c.descripcion, ctaInstagram: c.ctaInstagram, ctaFacebook: c.ctaFacebook,
         urlFacebook: c.urlFacebook, hashtags: c.hashtags,
         archivosSeleccionados: c.archivos.map(a => ({ nombre: a.name, tipo: a.type, tamano: a.size })),
@@ -357,7 +375,9 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       alFinalizar();
     } catch (error) {
       setSubida(null);
-      setErrorEditor(`${error.message || "No se pudieron subir los archivos."} ${id ? "Podés reintentar sobre el mismo pedido." : "Revisá el panel antes de crear otro pedido."}`);
+      const msg = error.message || "No se pudieron subir los archivos.";
+      const esGenerico = /Revisá los datos|Revisa los datos|datos de las cuatro/i.test(msg);
+      setErrorEditor(esGenerico ? "El servidor no aceptó los datos de una publicación. Revisa que cada contenido tenga texto, día, horario, formato correcto y archivos. Si el problema sigue, abre la consola (F12) y revisa la respuesta de /api/servicios/publicaciones/prueba." : `${msg} ${id ? "Puedes reintentar sobre el mismo pedido." : "Revisa el panel antes de crear otro pedido."}`);
     } finally {
       envioEnCurso.current = false;
       setEnviando(false);
@@ -379,7 +399,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       });
       const resultado = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok || resultado.ok !== true || resultado.estado !== "en_revision") {
-        throw new Error(resultado.error || "No se pudo finalizar el envío anterior. Revisá si faltan archivos.");
+        throw new Error(resultado.error || "No se pudo finalizar el envío anterior. Revisa si faltan archivos.");
       }
       alFinalizar();
     } catch (error) {
@@ -414,8 +434,10 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
 
   return <form onSubmit={programar} className="space-y-4 font-normal">
     <div className={`${CARD} p-4 sm:p-5`}>
-      <h2 className="text-sm font-medium">{modoRenovacion ? `Programar nueva semana · Semana ${pedidoRenovacion.numeroSemana || 2}` : "Programá tu primera semana"}</h2>
-      <p className="mt-1 text-xs leading-5 text-tinta-apagado">{modoRenovacion ? "Configurá los cuatro contenidos de tu semana pagada. Se enviarán a revisión administrativa antes de publicarse." : "Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas."}</p>
+      {modoRenovacion && (<>
+        <h2 className="text-sm font-medium">{`Programar nueva semana · Semana ${pedidoRenovacion.numeroSemana || 2}`}</h2>
+        <p className="mt-1 text-xs leading-5 text-tinta-apagado">Configurá los cuatro contenidos de tu semana pagada. Se enviarán a revisión administrativa antes de publicarse.</p>
+      </>)}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="mb-2 text-xs font-medium">Facebook e Instagram</p>
@@ -446,7 +468,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     </div>
 
     <div className={`${CARD} p-4 sm:p-5`}>
-      <h2 className="text-sm font-medium">Elegí el contenido que querés publicar</h2>
+      <h2 className="text-sm font-medium">Elige el contenido que quieres publicar</h2>
       <p className="mt-1 text-xs leading-5 text-tinta-apagado">Cada contenido conserva sus propios archivos, formato, textos, día, horario y hagstags.</p>
     </div>
 
@@ -486,11 +508,11 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </label>
               <label className="text-xs font-medium">Horario local
                 <select className={`mt-1 ${CAMPO}`} value={item.hora} disabled={sinEdicion} onChange={e => actualizar({ hora: e.target.value })}>
-                  {HORAS_SEMANA.map(x => <option key={x} value={x}>{a12h(x)}</option>)}
+                  {HORAS_SEMANA.map(x => <option key={x} value={x}>{x}</option>)}
                 </select>
               </label>
             </div>
-            <div className="mt-4 border-t border-borde pt-4">
+<div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
               <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
                 <CloudUpload size={19} className="shrink-0 text-azul" />
@@ -527,11 +549,11 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             <label className="col-span-full text-xs font-medium">Copy o texto de la publicación
               <textarea className={`${CAMPO} mt-1 min-h-24`} placeholder="Escribí el texto de tu publicación" maxLength={1500} disabled={sinEdicion} value={item.descripcion} onChange={e => actualizar({ descripcion: e.target.value })} />
             </label>
-            {redes.includes("instagram") && <label className="text-xs font-medium">CTA para Instagram
+            {redes.includes("instagram") && <label className="text-xs font-medium">Texto para Instagram
               <input className={`mt-1 ${CAMPO}`} placeholder="ej: Enlace en nuestra bio" maxLength={100} value={item.ctaInstagram} disabled={sinEdicion} onChange={e => actualizar({ ctaInstagram: e.target.value })} />
             </label>}
             {redes.includes("facebook") && <>
-              <label className="text-xs font-medium">CTA para Facebook
+              <label className="text-xs font-medium">Texto para Facebook
                 <input className={`mt-1 ${CAMPO}`} placeholder="ej: Visitá nuestra tienda" maxLength={100} value={item.ctaFacebook} disabled={sinEdicion} onChange={e => actualizar({ ctaFacebook: e.target.value })} />
               </label>
               <label className="text-xs font-medium">URL para Facebook
@@ -608,7 +630,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         </div>)}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
-        {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
+        {!datosCompletos && <p className="text-amber-700">Revisa tus datos personales y el nombre del emprendimiento en el registro.</p>}
         {subida && <p role="status" className="text-tinta-suave">Subiendo {subida.archivo} · {subida.porcentaje}%</p>}
         <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || enviando || !redes.length}>
           {enviando ? "Guardando y subiendo archivos..." : pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
@@ -637,9 +659,10 @@ function RenovacionPaypalReal({pedidoId,seleccion,alActualizar}) {
     const r=await fetch(`${API}?pedidoId=${encodeURIComponent(pedidoId)}`,{credentials:"same-origin",cache:"no-store"});
     const j=await r.json().catch(()=>null);
     if(!r.ok||j?.ok!==true)throw Error(j?.error||`No se pudo consultar PayPal (HTTP ${r.status}).`);
+    try{ const cancelado = localStorage.getItem(`pago_cancelado_${pedidoId}`); if(cancelado && j?.pedido?.id === cancelado) j.pedido = null; }catch{}
     setInfo(j);return j;
   },[pedidoId]);
-  useEffect(()=>{let activo=true;consultar().catch(e=>{if(activo)setError(e.message)});return()=>{activo=false;};},[consultar]);
+  const autoRedirigido = useRef(false);
   const crear=async()=>{
     setOcupado(true);setError("");setMensaje("");
     try {
@@ -655,6 +678,7 @@ function RenovacionPaypalReal({pedidoId,seleccion,alActualizar}) {
     }catch(e){setError(e.message||"PayPal no está disponible.");}
     finally{setOcupado(false);}
   };
+  useEffect(()=>{let activo=true;consultar().then((j)=>{ if(activo && j?.habilitada && !j?.pedido?.pagoConfirmado && !autoRedirigido.current){ autoRedirigido.current=true; setTimeout(()=>{ crear(); }, 600); } }).catch(e=>{if(activo)setError(e.message)});return()=>{activo=false;};},[consultar]);
   const verificar=async()=>{
     if(!info?.pedido?.id)return;
     setOcupado(true);setError("");setMensaje("");
@@ -669,29 +693,28 @@ function RenovacionPaypalReal({pedidoId,seleccion,alActualizar}) {
     }catch(e){setError(e.message||"No se pudo verificar el pago.");}
     finally{setOcupado(false);}
   };
-  const pedido=info?.pedido,precio=seleccion==="ambas"?"15.00":"10.00";
+  const pedido=info?.pedido,precio=seleccion==="ambas"?"6.00":"4.00";
   const finalizada=pedido&&(pedido.configuracionEstado==="programada"||pedido.estadoSemana==="finalizada");
   const pendiente=pedido&&!finalizada;
   const otrasRedes=pendiente&&JSON.stringify([...(pedido.redes||[])].sort())!==JSON.stringify((seleccion==="ambas"?["facebook","instagram"]:[seleccion]).sort());
   return <div className="space-y-3 rounded-sm border border-borde bg-white p-3 text-xs">
     <p className="font-medium text-tinta">PayPal · semana adicional de 7 días</p>
-    <p className="text-tinta-suave">Importe seleccionado: <strong>USD {precio}</strong>. El importe definitivo se verifica en el servidor antes de enviar a PayPal.</p>
-    {info?.entorno==="sandbox"&&<p className="text-amber-700">Entorno de prueba Sandbox: no se cobran fondos reales.</p>}
     {info&&!info.habilitada&&<p className="text-amber-700">{info.motivo||"PayPal todavía no está habilitado."}</p>}
     {info?.bloqueada&&<p className="text-amber-700">{info.bloqueada}</p>}
     {pedido&&<div className="rounded-sm bg-crema p-3 text-tinta-suave">
       <p>Semana {pedido.numeroSemana} · Estado: <strong>{pedido.estado}</strong></p>
       <p className="mt-1">Redes reservadas: {(pedido.redes||[]).map(redLabel).join(" · ")}</p>
-      <p className="mt-1">Importe reservado: <strong>USD {Number(pedido.importe).toFixed(2)}</strong></p>
       {pedido.pagoConfirmado&&<p className="mt-1 text-emerald-700">Pago confirmado. Pendiente de la preparación o programación administrativa.</p>}
     </div>}
-    {otrasRedes&&<p className="text-amber-700">La semana pendiente tiene otras redes seleccionadas. Terminá ese pago antes de cambiar las redes.</p>}
-    {info?.habilitada&&!info.bloqueada&&(!pendiente||(!pedido?.pagoConfirmado&&!otrasRedes))&&
+    {info?.habilitada&&!info.bloqueada&&
       <button type="button" disabled={ocupado} className={BTN_PRIMARIO} onClick={crear}>
         {ocupado?"Preparando PayPal...":pendiente?"Continuar pago pendiente":finalizada?`Solicitar Semana ${(pedido.numeroSemana||2)+1} con PayPal`:"Pagar con PayPal"}
       </button>}
     {info?.habilitada&&pendiente&&!pedido.pagoConfirmado&&<button type="button" disabled={ocupado} className={BTN_SECUNDARIO} onClick={verificar}>
       {ocupado?"Verificando...":"Verificar si el pago se completó"}
+    </button>}
+    {pendiente&&!pedido.pagoConfirmado&&<button type="button" disabled={ocupado} className="mt-1 w-full rounded-sm border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50" onClick={async()=>{ if(!confirm("¿Cancelar este pago con PayPal? Podrás elegir otro método.")) return; const idCancelado = info?.pedido?.id; try{ await fetch(`${API}/cancelar`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pedidoId, semanaId: idCancelado})}); }catch{} try{ if(idCancelado) localStorage.setItem(`pago_cancelado_${pedidoId}`, idCancelado); }catch{} setInfo(null); alActualizar?.(null); }}>
+      Cancelar este pago y elegir otro método
     </button>}
     {error&&<p role="alert" className="text-red-700">{error}</p>}
     {mensaje&&<p role="status" className="text-emerald-700">{mensaje}</p>}
@@ -795,7 +818,7 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
         body: archivoRenovacion,
       });
       const tipo = respuesta.headers.get("content-type") || "";
-      if (!tipo.includes("application/json")) throw new Error(`El servidor devolvió una página (HTTP ${respuesta.status}). Revisá los registros de Cloudflare.`);
+      if (!tipo.includes("application/json")) throw new Error(`El servidor devolvió una página (HTTP ${respuesta.status}). Revisa los registros de Cloudflare.`);
       const json = await respuesta.json();
       if (!respuesta.ok || !json.ok) throw new Error(json.error || `No se pudo enviar el comprobante (HTTP ${respuesta.status}).`);
       setArchivoRenovacion(null);
@@ -810,7 +833,10 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
     catch { setErrorRenovacion("Seleccioná el dato y copialo manualmente."); }
   };
   const pedido = datosRenovacion?.pedido;
-  if(pedido?.metodoPago==='paypal')return <p className="rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">La semana actual se solicitó por PayPal. Para continuar el pago, seleccioná PayPal en el formulario.</p>;
+  let pedidoCanceladoLocal = false;
+  try{ pedidoCanceladoLocal = Boolean(pedido?.id && localStorage.getItem(`pago_cancelado_${pedidoId}`) === pedido.id); }catch{}
+  const pedidoEfectivo = pedidoCanceladoLocal ? null : pedido;
+  if(pedido?.metodoPago==='paypal' && !pedidoCanceladoLocal)return <p className="rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">La semana actual se solicitó por PayPal. Para continuar el pago, seleccioná PayPal en el formulario.</p>;
   const estados = {
     pendiente_comprobante: "Esperando comprobante", en_revision: "Comprobante en revisión",
     aprobado: "Pago aprobado", rechazado: "Comprobante rechazado · podés enviar uno nuevo",
@@ -825,11 +851,10 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
       </div>
     </div>}
     <p className="font-medium text-tinta">Transferencia bancaria · semana adicional de 7 días</p>
-    <p className="text-tinta-suave"></p>
     {datosRenovacion === null && !errorRenovacion && <p className="text-tinta-apagado">Consultando disponibilidad...</p>}
     {datosRenovacion && !datosRenovacion.habilitada &&
       <p role="status" className="text-amber-700">{datosRenovacion.motivo || "Los pagos reales todavía no están habilitados."}</p>}
-    {datosRenovacion?.habilitada && !pedido &&
+    {datosRenovacion?.habilitada && !pedidoEfectivo &&
       <button type="button" disabled={ocupadoRenovacion} className={BTN_PRIMARIO} onClick={crear}>
         {ocupadoRenovacion ? "Preparando pedido..." : "Continuar con transferencia"}
       </button>}
@@ -837,13 +862,9 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
       <button type="button" disabled={ocupadoRenovacion} className={BTN_PRIMARIO} onClick={crear}>
         {ocupadoRenovacion ? "Preparando renovación..." : `Solicitar Semana ${(pedido.numeroSemana || 2) + 1}`}
       </button>}
-    {pedido && <div className="space-y-3">
-      <div className="rounded-sm bg-crema px-3 py-2 text-tinta-suave">
-        <p>Estado: <strong>{estados[pedido.estado] || pedido.estado}</strong></p>
-        <p className="mt-1">Redes: {(pedido.redes || []).map(redLabel).join(" · ")}</p>
-        <p className="mt-1">Importe reservado: <strong>${pedido.importe.toLocaleString("es-AR")} ARS</strong></p>
-      </div>
-      {["pendiente_comprobante", "rechazado"].includes(pedido.estado) && datosRenovacion?.habilitada && <>
+    {pedidoEfectivo && <div className="space-y-3">
+
+      {["pendiente_comprobante", "rechazado"].includes(pedidoEfectivo.estado) && datosRenovacion?.habilitada && <>
         <details open className="rounded-sm border border-borde p-3">
           <summary className="cursor-pointer font-medium">Entidad bancaria y datos de pago <ChevronDown size={13} className="ml-1 inline"/></summary>
           <div className="mt-3 space-y-3 border-t border-borde pt-3">
@@ -856,7 +877,6 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
               </div>)}
           </div>
         </details>
-
         <label className="block font-medium">Comprobante de transferencia (JPG, PNG o PDF, máximo 8 MB)
           <input type="file" accept="image/jpeg,image/png,application/pdf"
             className="mt-2 block w-full rounded-sm border border-dashed border-borde p-3 text-xs"
@@ -866,17 +886,22 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
           {ocupadoRenovacion ? "Enviando comprobante..." : "Ya pagué · enviar comprobante"}
         </button>
       </>}
-      {pedido.estado === "en_revision" && <p className="text-tinta-suave">Estamos verificando el comprobante. No hace falta enviarlo otra vez.</p>}
-      {pedido.estado === "aprobado" && <p className="text-emerald-800">Pago aprobado. La programación de los contenidos de la semana adicional requiere una aprobación independiente; no comienza automáticamente por el pago.</p>}
+      {pedidoEfectivo.estado === "en_revision" && <p className="text-tinta-suave">Estamos verificando el comprobante. No hace falta enviarlo otra vez.</p>}
+      {pedidoEfectivo.estado === "aprobado" && <p className="text-emerald-800">Pago aprobado. La programación de los contenidos de la semana adicional requiere una aprobación independiente; no comienza automáticamente por el pago.</p>}
+      {["pendiente_comprobante","rechazado","en_revision"].includes(pedidoEfectivo.estado) && <button type="button" disabled={ocupadoRenovacion} className="mt-1 w-full rounded-sm border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50" onClick={async()=>{ if(!confirm("¿Cancelar este pago con transferencia? Podrás elegir otro método.")) return; const idCanc = pedidoEfectivo?.id; try{ await fetch(`/api/servicios/publicaciones/renovacion-transferencia/cancelar`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pedidoId})}); }catch{} try{ if(idCanc) localStorage.setItem(`pago_cancelado_${pedidoId}`, idCanc); }catch{} setDatosRenovacion((v)=> v ? {...v, pedido: null} : v); }}>
+        Cancelar este pago y elegir otro método
+      </button>}
     </div>}
     {mensajeRenovacion && <p role="status" className="text-emerald-700">{mensajeRenovacion}</p>}
     {errorRenovacion && <p role="alert" className="text-red-700">{errorRenovacion}</p>}
-    <p className="text-[11px] leading-5 text-tinta-apagado"></p>
   </div>;
 }
 
 export default function PanelClientePublicaciones() {
   const [datos, setDatos] = useState(null);
+  const [semanaCancelada, setSemanaCancelada] = useState(() => { try { return JSON.parse(localStorage.getItem("redes_canceladas") || "{}"); } catch { return {}; } });
+  const [mostrarConfirmarCancelacion, setMostrarConfirmarCancelacion] = useState(null);
+  const cancelarSemana = async (pedidoId) => { setSemanaCancelada(v => { const nv = {...v, [pedidoId]: true}; try { localStorage.setItem("redes_canceladas", JSON.stringify(nv)); } catch {} return nv; }); setMostrarConfirmarCancelacion(null); try { await fetch(`${API}/cancelar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pedidoId }) }); } catch {} };
   const [configurando, setConfigurando] = useState(false);
   const [configurandoSemana2, setConfigurandoSemana2] = useState(false);
   const [detallesPanel, setDetallesPanel] = useState({perfil:null,detalles:{},semanasPagadas:{}});
@@ -908,7 +933,7 @@ export default function PanelClientePublicaciones() {
       const respuesta = await fetch(API, { credentials: "same-origin", cache: "no-store" });
       const tipoPanel = respuesta.headers.get("content-type") || "";
       if (!tipoPanel.includes("application/json")) {
-        throw new Error(`La API del panel devolvió HTML en vez de JSON (HTTP ${respuesta.status}). Revisá la ruta /api/servicios/clientes/panel y el despliegue del Worker.`);
+        throw new Error(`La API del panel devolvió HTML en vez de JSON (HTTP ${respuesta.status}). Revisa la ruta /api/servicios/clientes/panel y el despliegue del Worker.`);
       }
       let json = await respuesta.json();
       // Solo un 401 confirmado por la API indica que hay que iniciar sesión.
@@ -1277,10 +1302,10 @@ function infoPersonal(datos, pedido) {
             </div>
           </section>
           <section className={`${CARD} space-y-3 p-4`}>
-            <h2 className="text-sm font-medium">Programá tu primera semana</h2>
+            <h2 className="text-sm font-medium">Programa tu primera semana</h2>
             <p className="text-xs leading-5 text-tinta-apagado">Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas.</p>
             <button type="button" className={BTN_PRIMARIO} onClick={() => setConfigurando(v=>!v)}>
-              {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
+              {configurando ? "Cerrar" : "Programa tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
           {configurando && <EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} />}
@@ -1329,7 +1354,7 @@ function infoPersonal(datos, pedido) {
                     {conectada && <button type="button"
                       className="rounded-sm border border-borde bg-white px-2.5 py-1.5 text-xs font-medium text-tinta-suave hover:bg-crema disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={p.estadoServicio !== "sin_activar" || Boolean(accionInstagram || accionFacebook)}
-                      title={p.estadoServicio === "sin_activar" ? "Desconectar cuenta" : "No podés desconectar mientras haya una semana activa o publicaciones pendientes."}
+                      title={p.estadoServicio === "sin_activar" ? "Desconectar cuenta" : "No puedes desconectar mientras haya una semana activa o publicaciones pendientes."}
                       onClick={() => red === "facebook" ? desconectarFacebook(p.pedidoId) : desconectarInstagram(p.pedidoId)}>
                       Desconectar
                     </button>}
@@ -1407,6 +1432,17 @@ function infoPersonal(datos, pedido) {
                   </div>;
                 }) : <p className="py-2 text-xs text-tinta-apagado">Todavía no hay contenidos cargados.</p>}</div>
               </div>)}
+              {/* CANCELAR SEMANA - dentro de Contenido programado, debajo del último contenido, botón pequeño */}
+              <div className="mt-4 border-t border-borde pt-3">
+                {!semanaCancelada[p.pedidoId] && (
+                  <button type="button" onClick={() => setMostrarConfirmarCancelacion(p.pedidoId)} className="inline-flex items-center justify-center rounded-sm bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700">
+                    Cancelar semana
+                  </button>
+                )}
+                {semanaCancelada[p.pedidoId] && (
+                  <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Semana cancelada. No se publicará más contenido de esta semana.</p>
+                )}
+              </div>
               {p.modalidad === "prueba_gratuita" && p.estadoServicio === "sin_activar" && (
                 <div className="mt-4 border-t border-borde pt-3">
                   <button type="button" className={BTN_SECUNDARIO}
@@ -1535,51 +1571,70 @@ function infoPersonal(datos, pedido) {
 
             <details className={`${CARD} group p-4 sm:p-5`}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">Configurar otra semana <ChevronDown size={13} className="group-open:rotate-180"/></summary>
-              <div className="mt-3 space-y-4 border-t border-borde pt-4">
-                <p className="text-xs font-medium text-tinta">Elegí en cuáles de tus redes vinculadas querés publicar</p>
-                <div className="grid gap-3 sm:grid-cols-3">
+              <div className="mt-3 space-y-3 border-t border-borde pt-3">
+                <p className="text-xs text-tinta-apagado">Elige en qué redes vinculadas quieres publicar</p>
+                <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    {nombre:"Facebook", red:"facebook", publicaciones:"Hasta 4 publicaciones", precioARS:"$10.000", precioUSD:"USD 4", descuento:""},
-                    {nombre:"Instagram", red:"instagram", publicaciones:"Hasta 4 publicaciones", precioARS:"$10.000", precioUSD:"USD 4", descuento:""},
-                    {nombre:"Ambas", red:"ambas", publicaciones:"Hasta 8 publicaciones", precioARS:"$15.000", precioUSD:"USD 6", descuento:"25% de ahorro", destacado:true},
-                  ].map(op=><button type="button" key={op.red}
+                    {nombre:"Facebook",red:"facebook",precioARS:"$6.990",precioUSD:"USD 4",logos:["https://i.postimg.cc/rshTXS0k/Logo-de-Facebook.png"]},
+                    {nombre:"Instagram",red:"instagram",precioARS:"$6.990",precioUSD:"USD 4",logos:["https://i.postimg.cc/1tGRTnck/3840px-Instagram-logo-2022-svg.png"]},
+                    {nombre:"Ambas",red:"ambas",precioARS:"$10.990",precioUSD:"USD 6",descuento:"Ahorrá $2.990",logos:["https://i.postimg.cc/rshTXS0k/Logo-de-Facebook.png","https://i.postimg.cc/1tGRTnck/3840px-Instagram-logo-2022-svg.png"]},
+                  ].map(op=>{
+                    const seleccionada = (planSemanal[p.pedidoId] || "ambas")===op.red;
+                    return (<button type="button" key={op.red}
                     disabled={op.red==="ambas" ? !(redes.includes("instagram")&&redes.includes("facebook")) : !redes.includes(op.red)}
                     title={op.red==="ambas" ? "Necesitás tener ambas redes vinculadas" : "Red no incluida en el pedido inicial"}
                     onClick={()=>setPlanSemanal(v=>({...v,[p.pedidoId]:op.red}))}
-                    className={`relative rounded-sm border p-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red ? "border-azul bg-azul-super-claro shadow-fintech ring-1 ring-azul" : "border-borde bg-white hover:border-slate-300 hover:shadow-fintech"} ${op.destacado ? "sm:-mt-1 sm:pb-5" : ""}`}>
-                    {op.destacado && <span className="absolute -top-2 left-3 rounded-sm bg-azul px-2 py-0.5 text-[10px] font-medium text-white">RECOMENDADO</span>}
-                    <p className="text-[15px] font-medium text-tinta">{op.nombre}</p>
-                    <p className="mt-2 text-[11px] text-tinta-suave">{op.publicaciones}</p>
-                    <div className="mt-3">
-                      <p className="text-[15px] font-medium text-tinta leading-tight">{op.precioARS} <span className="text-[13px] font-medium text-tinta">• {op.precioUSD} /semana</span></p>
-                      {op.descuento && <span className="mt-2 inline-flex rounded-sm bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">{op.descuento}</span>}
+                    className={`relative rounded-sm border px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-40 ${seleccionada?"border border-azul bg-azul-super-claro ring-1 ring-azul":"border border-borde bg-white"}`}>
+                    {op.red==="ambas" && <span className="absolute -top-2 left-3 rounded-full bg-azul px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-sm">Ahorrá $2.990</span>}
+                    {/* Fila 1: logo + red | Hasta X publicaciones */}
+                    <div className="grid grid-cols-2 items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        {op.logos.map((src,i)=>(<img key={i} src={src} alt={op.nombre} className="h-5 w-5 object-contain" loading="lazy" />))}
+                        <p className="text-[13px] font-medium">{op.nombre}</p>
+                      </div>
+                      <p className="text-right text-[11px] text-tinta-apagado">{op.red==="ambas"?"Hasta 8 publicaciones":"Hasta 4 publicaciones"}</p>
                     </div>
-                    {planSemanal[p.pedidoId]===op.red && <div className="absolute right-3 top-3 h-5 w-5 rounded-full bg-azul flex items-center justify-center"><Check size={12} className="text-white"/></div>}
-                  </button>)}
+                    {/* Fila 2: precio ARS | precio USD */}
+                    <div className="mt-2 grid grid-cols-2 items-baseline gap-2 border-t border-borde pt-2">
+                      <p className="text-xl font-medium tracking-tight text-tinta">{op.precioARS} <span className="text-xs font-normal text-tinta-suave">ARS</span></p>
+                      <p className="text-right text-xs text-tinta-suave">{op.precioUSD} / semana</p>
+                    </div>
+
+                  </button>);})}
+
                 </div>
-                {planSemanal[p.pedidoId] && <div className="space-y-3 border-t border-borde pt-4">
-                  <p className="text-sm font-medium text-tinta">Elegí como abonar una semana adicional</p>
-                  <div className="flex flex-col gap-2 w-full">
-                    <button type="button" className={`flex w-full items-center justify-between gap-3 rounded-sm border px-4 py-3 text-left text-sm transition-all ${medioSemanal[p.pedidoId]==="transferencia" ? "border-azul bg-azul-super-claro" : "border-borde bg-white hover:bg-slate-50"}`}
-                      onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"transferencia"}))}>
-                      <span className="flex items-center gap-2.5 font-medium"><Landmark size={22} className="text-black"/> Transferencia bancaria</span>
-                      {medioSemanal[p.pedidoId]==="transferencia" && <Check size={16} className="text-azul"/>}
+                {(planSemanal[p.pedidoId] || "ambas") && <div className="space-y-2 border-t border-borde pt-3">
+                  <p className="text-sm font-medium">Elige cómo abonar</p>
+                  <div className="flex flex-col gap-3">
+                    <button type="button" onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"transferencia"}))} className={`flex w-full items-center gap-3 rounded-sm border px-3 py-2.5 text-left transition ${medioSemanal[p.pedidoId]==="transferencia"?"border border-azul bg-azul-super-claro ring-1 ring-azul":"border border-borde bg-white hover:border-azul-claro"}`}>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-slate-100"><Landmark size={20} className="text-black" /></span>
+                      <span><span className="block text-sm font-medium">Transferencia bancaria</span><span className="mt-0.5 block text-xs text-tinta-suave">Transferís y adjuntás el comprobante</span></span>
                     </button>
-                    <button type="button" className={`flex w-full items-center justify-between gap-3 rounded-sm border px-4 py-3 text-left text-sm transition-all ${medioSemanal[p.pedidoId]==="paypal" ? "border-[#FFC439] bg-[#FFC439]/20" : "border-borde bg-white hover:bg-slate-50"}`}
-                      onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"paypal"}))}>
-                      <span className="flex items-center gap-2 font-medium"><span className="flex h-8 w-8 items-center justify-center rounded-sm bg-[#FFC439]"><img src="https://i.postimg.cc/T3NcSZ08/9309.png" alt="PayPal" className="h-4 w-auto object-contain"/></span> PayPal</span>
-                      {medioSemanal[p.pedidoId]==="paypal" && <Check size={16} className="text-tinta"/>}
+                    <button type="button" onClick={()=>setMedioSemanal(v=>({...v,[p.pedidoId]:"paypal"}))} className={`flex w-full items-center justify-center rounded-sm border px-3 py-2.5 transition ${medioSemanal[p.pedidoId]==="paypal"?"border border-[#003087] ring-1 ring-[#003087]":"border border-[#FFC439]"}`} style={{backgroundColor:"#FFC439"}}>
+                      <img src="/paypal-logo.png" alt="PayPal" className="h-5 w-auto object-contain" loading="lazy" onError={(e)=>{e.currentTarget.src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg";}} />
                     </button>
                   </div>
-                  <div className="w-full">
-                    {medioSemanal[p.pedidoId]==="paypal" &&
-                      <RenovacionPaypalReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
-                    {medioSemanal[p.pedidoId]==="transferencia" &&
-                      <RenovacionTransferenciaReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId]} alActualizar={setRenovacionReal}/>}
-                  </div>
+                  {medioSemanal[p.pedidoId]==="paypal" &&
+                    <RenovacionPaypalReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId] || "ambas"} alActualizar={setRenovacionReal}/>}
+                  {medioSemanal[p.pedidoId]==="transferencia" &&
+                    <RenovacionTransferenciaReal pedidoId={p.pedidoId} seleccion={planSemanal[p.pedidoId] || "ambas"} alActualizar={setRenovacionReal}/>}
                 </div>}
               </div>
             </details>
+
+
+            {mostrarConfirmarCancelacion === p.pedidoId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="w-full max-w-sm rounded-sm bg-white p-5">
+                  <p className="text-sm font-medium">¿Cancelar esta semana?</p>
+                  <p className="mt-2 text-xs leading-5 text-tinta-suave">Se pausará la publicación de los contenidos que falten. Esta acción no se puede deshacer.</p>
+                  <div className="mt-4 flex gap-2">
+                    <button onClick={() => setMostrarConfirmarCancelacion(null)} className="flex-1 rounded-sm border border-borde px-3 py-2 text-xs font-medium">Volver</button>
+                    <button onClick={() => cancelarSemana(p.pedidoId)} className="flex-1 rounded-sm bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700">Sí, cancelar</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </article>;
         })}
       </>}

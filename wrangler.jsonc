@@ -1,83 +1,117 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "redesenpiloto",
-  "main": "worker.js",
-  "keep_vars": true,
-  "vars": {
-    "FACEBOOK_PAGE_ID": "1312632228596581"
-  },
-  "images": {
-    "binding": "IMAGES"
-  },
-  "ai": {
-    "binding": "AI"
-  },
-  "compatibility_date": "2026-10-09",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
-  "r2_buckets": [
-    {
-      "binding": "PRODUCTOS_R2",
-      "bucket_name": "andrestrotamundos-productos"
-    },
-    {
-      "binding": "SERVICIOS_COMPROBANTES_R2",
-      "bucket_name": "andrestrotamundos-comprobantes"
-    },
-    {
-      "binding": "SERVICIOS_CONTENIDOS_R2",
-      "bucket_name": "andrestrotamundos-contenidos"
-    }
-  ],
-  "ratelimits": [
-    {
-      "name": "SERVICIO_LIMITE_PEDIDOS",
-      "namespace_id": "2718101",
-      "simple": {
-        "limit": 6,
-        "period": 60
-      }
-    },
-    {
-      "name": "SERVICIO_LIMITE_CONSULTAS",
-      "namespace_id": "2718102",
-      "simple": {
-        "limit": 60,
-        "period": 60
-      }
-    },
-    {
-      "name": "SERVICIO_LIMITE_COMPROBANTES",
-      "namespace_id": "2718103",
-      "simple": {
-        "limit": 6,
-        "period": 60
-      }
-    }
-  ],
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*",
-      "/compartir/*",
-      "/compartir-facebook/*"
-    ]
-  },
-  "durable_objects": {
-    "bindings": [
-      { "name": "ACCESO_CLIENTES_DURABLE", "class_name": "AccesoClientesDurable" }
-    ]
-  },
-  "migrations": [
-    { "tag": "acceso-clientes-v1", "new_sqlite_classes": ["AccesoClientesDurable"] }
-  ],
-  "triggers": {
-    "crons": [
-      "*/5 * * * *"
-    ]
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "redesenpiloto",
+	"main": "worker.js",
+	"keep_vars": true,
+	"vars": {
+		"FACEBOOK_PAGE_ID": "1312632228596581",
+		"SERVICIO_CLIENTES_CORREO_DESDE": "Comunidad Semanal <acceso@andreshousesitter.com>",
+		"SERVICIO_META_APP_ID": "1050457768006070",
+		"SERVICIO_META_CONFIG_ID": "1671008817888670",
+		"SERVICIO_PEDIDOS_HABILITADOS": "false",
+		"SERVICIO_PRUEBAS_PREPARACION_HABILITADA": "true",
+		"SERVICIO_TRANSFERENCIA_ALIAS": "redesenpiloto",
+		"SERVICIO_TRANSFERENCIA_CBU_CVU": "0000003100023252705282",
+		"SERVICIO_TRANSFERENCIA_ENTIDAD": "Mercado Pago",
+		"SERVICIO_TRANSFERENCIAS_HABILITADAS": "true",
+		"SERVICIO_TRANSFERENCIA_TITULAR": "Andrés House Sitter",
+		"SERVICIO_TURNSTILE_SITE_KEY": "0x4AAAAAAF4Adaii45LPuwAN"
+	},
+	"images": {
+		"binding": "IMAGES"
+	},
+	"ai": {
+		"binding": "AI"
+	},
+	"compatibility_date": "2026-10-09",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"r2_buckets": [
+		{
+			"binding": "PRODUCTOS_R2",
+			"bucket_name": "andrestrotamundos-productos"
+		},
+		{
+			"binding": "SERVICIOS_COMPROBANTES_R2",
+			"bucket_name": "andrestrotamundos-comprobantes"
+		},
+		{
+			"binding": "SERVICIOS_CONTENIDOS_R2",
+			"bucket_name": "andrestrotamundos-contenidos"
+		}
+	],
+	"ratelimits": [
+		{
+			"name": "SERVICIO_LIMITE_PEDIDOS",
+			"namespace_id": "2718101",
+			"simple": {
+				"limit": 6,
+				"period": 60
+			}
+		},
+		{
+			"name": "SERVICIO_LIMITE_CONSULTAS",
+			"namespace_id": "2718102",
+			"simple": {
+				"limit": 60,
+				"period": 60
+			}
+		},
+		{
+			"name": "SERVICIO_LIMITE_COMPROBANTES",
+			"namespace_id": "2718103",
+			"simple": {
+				"limit": 6,
+				"period": 60
+			}
+		}
+	],
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*",
+			"/compartir/*",
+			"/compartir-facebook/*"
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ACCESO_CLIENTES_DURABLE",
+				"class_name": "AccesoClientesDurable"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "acceso-clientes-v1",
+			"new_sqlite_classes": [
+				"AccesoClientesDurable"
+			]
+		}
+	],
+	"triggers": {
+		"crons": [
+			"*/5 * * * *"
+		]
+	},
+	"routes": [
+		{
+			"pattern": "redesenpiloto.com.ar",
+			"zone_name": "redesenpiloto.com.ar",
+			"custom_domain": true,
+			"enabled": true,
+			"previews_enabled": false
+		},
+		{
+			"pattern": "www.redesenpiloto.com.ar",
+			"zone_name": "redesenpiloto.com.ar",
+			"custom_domain": true,
+			"enabled": true,
+			"previews_enabled": false
+		}
+	]
 }
-

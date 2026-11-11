@@ -2,7 +2,7 @@
 // No publica contenidos y no toca la conexión de prueba administrativa.
 import crypto from "node:crypto";
 import { ejecutarConexionInstagramPedido } from "./instagram-pedidos.js";
-import { obtenerClienteRegistrado } from "./clientes-acceso.js";
+import { obtenerClienteRegistrado, verificarYAsociarCuentaMeta, obtenerCorreoDePedido, MENSAJE_CUENTA_ASOCIADA, MENSAJE_SEMANA_GRATUITA_USADA } from "./clientes-acceso.js";
 
 const META_VERSION = "v26.0";
 const ORIGENES = new Set([
@@ -258,6 +258,24 @@ async function callback(request, env, url) {
     }
     if (!/^\d{5,30}$/.test(String(seleccionada.id || ""))) throw new Error("PAGINA_INVALIDA");
     const tokenCifrado = cifrarToken(seleccionada.access_token, config.clave);
+    // REGLA FINAL: Facebook queda asociado al primer correo que lo conectó, para siempre.
+    // Se verifica ANTES de guardar la conexión, para que no se pueda usar otro correo
+    // para reclamar otra semana gratuita con la misma página.
+    await conDb(env, async db => {
+      const pedidoPrevio = await db.collection("pedidos_servicios").findOne({ pedidoId: intento.pedidoId, tipo: "publicaciones" });
+      const correoActual = await obtenerCorreoDePedido(db, pedidoPrevio);
+      if (!correoActual) throw new Error("CORREO_NO_IDENTIFICADO");
+      const check = await verificarYAsociarCuentaMeta(db, { plataforma: "facebook", idCuentaMeta: String(seleccionada.id), correoActual, pedido: pedidoPrevio });
+      if (!check.ok) {
+        const err = new Error(check.error || "CUENTA_YA_ASOCIADA");
+        err.mensajeUsuario = check.mensaje || MENSAJE_CUENTA_ASOCIADA;
+        throw err;
+      }
+    }).catch(e => {
+      // Convertir el error de asociación en página visible con el mensaje exacto.
+      if (e?.mensajeUsuario) throw Object.assign(new Error("CUENTA_YA_ASOCIADA"), { mensajeUsuario: e.mensajeUsuario });
+      throw e;
+    });
     await conDb(env, async db => {
       const pedido = await db.collection("pedidos_servicios").findOne({ pedidoId: intento.pedidoId, tipo: "publicaciones" });
       if (!pedidoHabilitado(pedido)) throw new Error("PEDIDO_NO_HABILITADO");
@@ -272,8 +290,11 @@ async function callback(request, env, url) {
       }, { upsert: true });
     });
     return pagina("Facebook conectado al pedido", `<p>La página <strong>${escapar(seleccionada.name || "Facebook")}</strong> quedó vinculada exclusivamente a este pedido.</p><p>Redes en Piloto podrá programar y publicar de forma automática en tu cuenta, los contenidos que hayas brindado.</p><p>ID de página: <code>${escapar(seleccionada.id)}</code></p>`);
-  } catch {
+  } catch (e) {
     // Nunca registrar ni devolver tokens, códigos OAuth, secretos ni respuestas completas de Meta.
+    if (e?.mensajeUsuario) {
+      return pagina("Cuenta asociada a otro correo", `<p>${escapar(e.mensajeUsuario)}</p>`, 409);
+    }
     return pagina("No se pudo completar la conexión", "<p>Revisá los permisos, la página seleccionada y el estado de tu pedido.</p>", 502);
   }
 }

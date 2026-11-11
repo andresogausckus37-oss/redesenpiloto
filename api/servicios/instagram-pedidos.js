@@ -1,7 +1,7 @@
 // Conexión independiente de Instagram profesional por pedido de Comunidad Semanal.
 // No publica ni toca las conexiones de Mega Bazar o Facebook del cliente.
 import crypto from "node:crypto";
-import { obtenerClienteRegistrado } from "./clientes-acceso.js";
+import { obtenerClienteRegistrado, verificarYAsociarCuentaMeta, obtenerCorreoDePedido } from "./clientes-acceso.js";
 
 const VERSION_META = "v26.0";
 const BASE = "/api/servicios/meta/pedidos/instagram";
@@ -358,6 +358,21 @@ async function callback(request, env, url) {
         : "Hay varias cuentas posibles. Autorizá una única página para evitar confusiones.", 422);
     }
     const elegida = candidatas[0];
+    // REGLA FINAL: Instagram queda asociado al primer correo que lo conectó, para siempre.
+    // Se verifica ANTES de guardar, para que no se pueda usar otro correo para
+    // reclamar otra semana gratuita con la misma cuenta de Instagram.
+    fase = "verificar-asociacion";
+    await conDB(env, async db => {
+      const pedidoPrevio = await db.collection(PEDIDOS).findOne({ pedidoId: intento.pedidoId, tipo: "publicaciones" });
+      const correoActual = await obtenerCorreoDePedido(db, pedidoPrevio);
+      if (!correoActual) throw new Error("CORREO_NO_IDENTIFICADO");
+      const check = await verificarYAsociarCuentaMeta(db, { plataforma: "instagram", idCuentaMeta: elegida.instagramId, correoActual, pedido: pedidoPrevio });
+      if (!check.ok) {
+        const err = new Error(check.error || "CUENTA_YA_ASOCIADA");
+        err.mensajeUsuario = check.mensaje;
+        throw err;
+      }
+    });
     fase = "guardar-conexion";
     const tokenCifrado = cifrar(elegida.pagina.access_token, cfg.cifradoKey);
     await conDB(env, async db => {
@@ -391,6 +406,9 @@ async function callback(request, env, url) {
     const diagnostico = [fase, http !== null ? `HTTP-${http}` : null,
       metaCode !== null ? `META-${metaCode}` : null,
       metaSubcode !== null ? `SUB-${metaSubcode}` : null, detalleSeguro].filter(Boolean).join(" / ");
+    if (error?.mensajeUsuario) {
+      return vista("Cuenta asociada a otro correo", error.mensajeUsuario, 409);
+    }
     return vista("No se pudo completar Instagram",
       `Meta autorizó el acceso, pero no se completó la conexión. Diagnóstico: ${diagnostico}. Compartí solamente este diagnóstico para revisar el fallo.`, 502);
   }
