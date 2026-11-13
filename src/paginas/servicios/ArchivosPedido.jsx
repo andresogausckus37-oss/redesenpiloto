@@ -50,9 +50,10 @@ export async function subirArchivosSemana(pedidoId, contenidos, progreso = () =>
   const confirmadosParciales = new Map();
   const informar = nombre => {
     const parcial = [...confirmadosParciales.values()].reduce((a, b) => a + b, 0);
+    const pct = bytesTotales > 0 ? Math.min(100, Math.round((bytesConfirmados + parcial) / bytesTotales * 100)) : 0;
     progreso({ archivo: `${nombre} · ${terminados} de ${archivos.length} completos`,
       completado: terminados, total: archivos.length,
-      porcentaje: Math.min(100, Math.round((bytesConfirmados + parcial) / bytesTotales * 100)) });
+      porcentaje: pct });
   };
   informar("Comprobando archivos");
 
@@ -95,16 +96,21 @@ export async function subirArchivosSemana(pedidoId, contenidos, progreso = () =>
     }
   }
 
+  // FIX 0% trabado: antes si UN archivo fallaba, primerError frenaba a los 2 workers
+  // y el progreso quedaba en 0 de 12 para siempre, aunque los demás archivos ya estaban en R2.
+  // Ahora cada archivo junta su error y los demás siguen; al final se lanza el primer error
+  // pero con el progreso real (terminados/total) ya actualizado.
+  const errores = [];
   async function tarea() {
-    while (!primerError) {
+    while (true) {
       const item = pendientes[siguiente++];
       if (!item) return;
       try { await enviarUno(item); }
-      catch (e) { primerError = primerError || e; }
+      catch (e) { errores.push(e); informar(item.archivo.name); }
     }
   }
   await Promise.all(Array.from({ length: Math.min(2, pendientes.length) }, () => tarea()));
-  if (primerError) throw primerError;
+  if (errores.length) throw errores[0];
   informar("Archivos confirmados");
   return { completados: terminados };
 }

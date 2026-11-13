@@ -37,11 +37,72 @@ function normalizarCorreo(valor) {
 // --- Correos temporales: lista negra, no lista blanca ---
 // Se permite cualquier correo válido (incl. dominio propio / empresa) excepto
 // los dominios conocidos de correo desechable. La lista se amplía sin tocar el resto.
-
-// Lista remota actualizada (cache en memoria del Worker). Si falla, se usa solo la lista estática.
-// Fuente: https://github.com/disposable-email-domains/disposable-email-domains
-let _listaRemotaCache = null;
-let _listaRemotaFecha = 0;
+const DOMINIOS_TEMPORALES = new Set([
+  "10minutemail.com","10minutemail.net","20minutemail.com","33mail.com","anonmails.de",
+  "armyspy.com","binkmail.com","bobmail.info","burnermail.io","byom.de","crazymailing.com",
+  "despammed.com","discard.email","discardmail.com","disposablemail.com","dispostable.com",
+  "dropmail.me","emkei.cf","emkei.ml","fakeinbox.com","fakemailgenerator.com","filzmail.com",
+  "getairmail.com","getnada.com","guerillamail.com","guerillamailblock.com","guerrillamail.org",
+  "guerrillamail.net","guerrillamail.biz","guerrillamail.de","harakirimail.com","hidemail.de",
+  "hushmail.com","inboxbear.com","incognitomail.com","incognitomail.org","jetable.com",
+  "jetable.net","jetable.org","kasmail.com","klzlk.com","kurzepost.de","lopl.co.cc","luxusmail.org",
+  "mailcatch.com","maildrop.cc","mailinator.com","mailinator.net","mailinator.org","mailnesia.com",
+  "mailnull.com","mailsac.com","mailscrap.com","mailtemp.info","mailtome.de","mailtv.net",
+  "mega.zik.dj","mintemail.com","mohmal.com","moncourrier.fr","monemail.fr","monmail.fr",
+  "mt2015.com","mycleaninbox.net","mytemp.email","mytrashmail.com","mytrashmailer.com",
+  "netmails.net","no-spam.ws","nobulk.com","noclickemail.com","nogmail.com","nomail.xl.cx",
+  "nospam.ze.tc","nospam4.us","o2stk.org","objectmail.com","obobbo.com","oneoffemail.com",
+  "onewaymail.com","oopi.org","owlpic.com","pokemail.net","pookmail.com","privacy.net",
+  "proxymail.eu","putthisinyourspamdatabase.com","quickinbox.com","rcpt.at","recode.me",
+  "recursor.net","regbypass.com","rejectmail.com","rklips.com","rmqkr.net","royal.net",
+  "rppkn.com","safe-mail.net","safetymail.info","safetypost.de","saynotospams.com",
+  "selfdestructingmail.com","sendspamhere.com","sharklasers.com","shiftmail.com",
+  "shortmail.net","sibmail.com","slopsbox.com","smellfear.com","snakemail.com",
+  "sneakemail.com","sofimail.com","sofort-mail.de","sogetthis.com","spamavert.com",
+  "spambob.com","spambob.net","spambob.org","spambog.com","spambog.de","spambog.ru",
+  "spambox.us","spamcannon.com","spamcannon.net","spamcon.org","spamcop.net",
+  "spamcorptastic.com","spamcowboy.com","spamcowboy.net","spamcowboy.org",
+  "spamday.com","spamex.com","spamfree24.com","spamfree24.de","spamfree24.eu",
+  "spamfree24.net","spamfree24.org","spamgoes.com","spamgourmet.com","spamgourmet.net",
+  "spamgourmet.org","spamherelots.com","spamhereplease.com","spamhole.com",
+  "spamify.com","spaminator.com","spamkill.info","spaml.com","spaml.de","spammotel.com",
+  "spamobox.com","spamoff.de","spamslicer.com","spamspot.com","spamstack.net",
+  "spamthis.co.uk","spamthisplease.com","spamtrail.com","spamtroll.net",
+  "speed.1s.fr","spoofmail.de","squizzy.de","ssoia.com","startkeys.com",
+  "super-auswahl.de","supergreatmail.com","supermailer.jp","suremail.info",
+  "teewars.org","teleworm.com","teleworm.us","temp-mail.org","temp-mail.ru",
+  "tempail.com","tempalias.com","tempe-mail.com","tempemail.com","tempemail.net",
+  "tempinbox.co.uk","tempinbox.com","tempmail.com","tempmail.de","tempmail.net",
+  "tempmail.org","tempmailaddress.com","tempmailer.com","tempomail.fr","temporarily.de",
+  "temporarioemail.com.br","temporaryemail.net","temporaryforwarding.com",
+  "temporaryinbox.com","temporarymailaddress.com","tempsky.com","tempthe.net",
+  "tempymail.com","thanksnospam.info","thelimestones.com","thisisnotmyrealemail.com",
+  "throwawayemailaddresses.com","throwawaymail.com","tijdelijke-email.nl","tmail.com",
+  "tmailinator.com","toiea.com","tradermail.info","trash2009.com","trash-amil.com",
+  "trash-mail.at","trash-mail.com","trash-mail.de","trash2009.com","trashdevil.com",
+  "trashdevil.de","trashemail.de","trashmail.at","trashmail.com","trashmail.de",
+  "trashmail.me","trashmail.net","trashmail.org","trashmail.ws","trashmailer.com",
+  "trashymail.com","trashymail.net","trialmail.de","trillianpro.com","turual.com",
+  "twinmail.de","tyldd.com","uggsrock.com","umail.net","uol.com.br","veryrealemail.com",
+  "vidchart.com","viditag.com","viewcastmedia.com","viewcastmedia.net","viewcastmedia.org",
+  "wasteland.rfc822.org","webemail.me","weg-werf-email.de","wegwerf-email-addressen.de",
+  "wegwerf-email-adressen.de","wegwerf-email.de","wegwerf-email.net","wegwerf-emails.de",
+  "wegwerfadresse.de","wegwerfemail.de","wegwerfemail.net","wegwerfemail.org",
+  "wegwerfmail.de","wegwerfmail.net","wegwerfmail.org","wegwerfpost.de","wegwerfpost.de",
+  "wh4f.org","whopy.com","willhackforfood.biz","wilemail.com","willselfdestruct.com",
+  "winemaven.info","wronghead.com","wuzup.net","wuzupmail.net","wwwnew.eu","xagloo.com",
+  "xemaps.com","xents.com","xmaily.com","xoxy.net","yep.it","yogamaven.com",
+  "yopmail.com","yopmail.fr","yopmail.net","yourdomain.com","yuurok.com","zehnminuten.de",
+  "zehnminutenmail.de","zehnminutenmail.net","zippymail.info","zoemail.net",
+  "yopmail.com","yopmail.fr","mailinator.com","guerrillamail.com","temp-mail.org",
+  "10minutemail.com","maildrop.cc","tempmail.com","throwawaymail.com","sharklasers.com",
+  "grr.la","getnada.com","mohmal.com","emailondeck.com","cs.email","mailnesia.com",
+]);
+function esCorreoTemporal(correo) {
+  if (typeof correo !== "string") return false;
+  const dominio = correo.trim().toLowerCase().split("@")[1] || "";
+  return DOMINIOS_TEMPORALES.has(dominio);
+}
 
 function configuracion(env) {
   const otpSecret = String(env?.SERVICIO_CLIENTES_CODIGO_SECRET ?? "").trim();
@@ -216,6 +277,9 @@ async function solicitar(request, env, config, ipHash, dbExistente = null) {
   const email = normalizarCorreo(datos?.email);
   if (!email) return responder({ ok: false, error: "Ingresá un correo válido." }, 400);
   const modo = datos?.modo === "registro" ? "registro" : "ingreso";
+  if (modo === "registro" && esCorreoTemporal(email)) {
+    return responder({ ok: false, error: "No se permiten correos temporales. Utiliza un correo válido para registrarte" }, 400);
+  }
   if (modo === "registro") {
     if (!validarPerfil(datos?.perfil)) return responder({ ok: false, error: "Completá correctamente tus datos de registro." }, 400);
     if (!await verificarTurnstileRegistro(request, env, datos?.turnstileToken)) {
@@ -277,7 +341,6 @@ async function verificar(request, env, config, ipHash, dbExistente = null) {
   const email = normalizarCorreo(datos?.email);
   const codigo = typeof datos?.codigo === "string" ? datos.codigo : "";
   if (!email || !/^\d{6}$/.test(codigo)) return responder({ ok: false, error: "Revisá el correo y los seis dígitos." }, 400);
-
   const modo = datos?.modo === "registro" ? "registro" : "ingreso";
   const perfil = modo === "registro" ? validarPerfil(datos?.perfil) : null;
   if (modo === "registro" && !perfil) return responder({ ok: false, error: "Los datos de registro no son válidos." }, 400);
@@ -571,6 +634,7 @@ export async function ejecutarPanelClientes(request, env) {
   }
 }
 
+
 // Solo identidad autenticada por OTP. Los invitados no se vinculan a cuentas
 // por coincidencia con un correo no verificado.
 // FASE7_UNA_CONEXION_DB_20261024: las rutas que ya abrieron MongoDB pueden
@@ -583,7 +647,7 @@ export async function ejecutarPanelClientes(request, env) {
 // Desconectar NO borra de esta colección: si se borrara, bastaría desconectar
 // desde Facebook para volver a reclamar otra semana gratuita con otro correo.
 // Solo un admin puede transferir manualmente una cuenta a otro correo.
-export const MENSAJE_CUENTA_ASOCIADA = "La cuenta que intentas conectar está asociada a otro correo. Inicia sesión en yu correo original y contrata una semana adicional para continuar programando y publicando tus contenidos en Redes en Piloto";
+export const MENSAJE_CUENTA_ASOCIADA = "Las cuentas que intentas conectar están asociadas a otro correo. Inicia sesión y contrata una semana adicional para continuar programando y publicando tus contenidos en Redes en Piloto";
 export const MENSAJE_SEMANA_GRATUITA_USADA = "Esta cuenta ya utilizó su semana gratuita. Inicia sesión con el correo original y contrata una semana adicional para continuar programando y publicando tus contenidos en Redes en Piloto";
 
 export async function verificarYAsociarCuentaMeta(db, { plataforma, idCuentaMeta, correoActual, pedido }) {

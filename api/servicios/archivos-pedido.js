@@ -370,14 +370,21 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
   const url = new URL(request.url);
   const pedidoId = url.searchParams.get("pedidoId");
   if(url.searchParams.has('semanaId')){
-    const { ejecutarAdminSemanaPagada } = await import('./admin-semanas-pagadas.js');
-    return ejecutarAdminSemanaPagada(request,env,autorizado,'archivos');
+    try {
+      const { ejecutarAdminSemanaPagada } = await import('./admin-semanas-pagadas.js');
+      return ejecutarAdminSemanaPagada(request,env,autorizado,'archivos');
+    } catch (e) {
+      console.error('admin-semanas-pagadas no disponible:', e?.message);
+      return html("Revisión no disponible","<p>La revisión de semanas pagadas no está disponible en este momento.</p>",503);
+    }
   }
   try {
     bucket(env);
     if (request.method === "GET") {
       if (!pedidoId) return await conDb(env,async db=>{
-        const { listarRenovacionesPendientes }=await import('./admin-semanas-pagadas.js');
+        let listarRenovacionesPendientes = async () => [];
+        try { ({ listarRenovacionesPendientes } = await import('./admin-semanas-pagadas.js')); } catch {}
+
         const pagadas=await listarRenovacionesPendientes(db);
         const links=pagadas.map(x=>`<p><a class="enlace-suave" href="${RUTA_ADMIN}?semanaId=${encodeURIComponent(x._id)}">Semana ${Number(x.numeroSemana)||2} · ${escapar(x.email||'Cliente')} · ${escapar(x.configuracionEstado)}</a></p>`).join('');
         return html("Revisión de contenidos",`<section><h2>Semanas pagadas reales</h2>${links||'<p>Sin semanas pagadas pendientes.</p>'}</section><section><h2>Buscar prueba gratuita</h2><form class="busqueda" method="get"><input aria-label="ID del pedido" name="pedidoId" placeholder="ID del pedido · SER-..." required><button type="submit">Buscar pedido</button></form></section>`);
@@ -414,7 +421,8 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
         }
         const archivos = await db.collection("archivos_servicios").find({pedidoId,estado:"subido"}).sort({contenidoId:1,posicion:1}).toArray();
         const revisable = preparacionAutorizada(pedido);
-        const tarjetas = pedido.publicaciones.map((p, indice) => {
+        const publicaciones = Array.isArray(pedido.publicaciones) ? pedido.publicaciones : [];
+        const tarjetas = publicaciones.map((p, indice) => {
           const lista = archivos.filter(a => a.contenidoId === p.id);
           return `<section><div class="seccion-cabecera"><h2>Contenido ${indice + 1} · ${escapar(p.tipo)}</h2><span class="chip">${lista.length} archivo${lista.length === 1 ? "" : "s"}</span></div><p class="muted">${escapar(p.diaPreferido || "Día sin definir")} · ${escapar(p.horaLocalPreferida || "Horario sin definir")} hora local</p><div class="copy">${escapar(p.descripcion || "Sin texto de publicación")}</div>${lista.length ? lista.map(a => {
             const enlace = `${RUTA_ADMIN}?pedidoId=${encodeURIComponent(pedidoId)}&accion=ver&contenidoId=${encodeURIComponent(p.id)}&posicion=${a.posicion}`;

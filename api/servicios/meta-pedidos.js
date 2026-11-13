@@ -5,14 +5,10 @@ import { ejecutarConexionInstagramPedido } from "./instagram-pedidos.js";
 import { obtenerClienteRegistrado, verificarYAsociarCuentaMeta, obtenerCorreoDePedido, MENSAJE_CUENTA_ASOCIADA, MENSAJE_SEMANA_GRATUITA_USADA } from "./clientes-acceso.js";
 
 const META_VERSION = "v26.0";
+// Solo dominio nuevo en producción.
 const ORIGENES = new Set([
-  "https://andreshousesitter.com",
-  "https://redesenpiloto.redesenpiloto.workers.dev",
-  // Dominio actual en producción (captura: redesenpiloto.com.ar)
   "https://redesenpiloto.com.ar",
   "https://www.redesenpiloto.com.ar",
-  "https://redesenpiloto.com",
-  "https://www.redesenpiloto.com",
 ]);
 const BASE = "/api/servicios/meta/pedidos";
 const CALLBACK = `${BASE}/callback`;
@@ -294,7 +290,7 @@ async function callback(request, env, url) {
         $setOnInsert: { conectadoEn: fecha },
       }, { upsert: true });
     });
-    return pagina("Facebook conectado al pedido", `<p>La página <strong>${escapar(seleccionada.name || "Facebook")}</strong> quedó vinculada exclusivamente a este pedido.</p><p>Redes en Piloto podrá programar y publicar de forma automática en tu cuenta todos los contenidos programados.</p><p>ID de página: <code>${escapar(seleccionada.id)}</code></p>`);
+    return pagina("Facebook conectado al pedido", `<p>La página <strong>${escapar(seleccionada.name || "Facebook")}</strong> quedó vinculada exclusivamente a este pedido.</p><p>Redes en Piloto podrá programar y publicar de forma automática en tu cuenta, los contenidos que hayas brindado.</p><p>ID de página: <code>${escapar(seleccionada.id)}</code></p>`);
   } catch (e) {
     // Nunca registrar ni devolver tokens, códigos OAuth, secretos ni respuestas completas de Meta.
     if (e?.mensajeUsuario) {
