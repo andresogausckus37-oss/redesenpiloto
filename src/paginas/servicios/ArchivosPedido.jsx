@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, CloudUpload, FileImage, Film, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { CheckCircle2, XCircle, CloudUpload, FileImage, Film, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
 const API = "/api/servicios/publicaciones/archivos";
-const TAMANO_PARTE = 8 * 1024 * 1024;
+const TAMANO_PARTE = 2 * 1024 * 1024;
 const MAX_IMAGEN = 20 * 1024 * 1024;
 const MAX_VIDEO = 150 * 1024 * 1024;
 const CAJA = "mt-4 rounded-sm border border-borde bg-white p-4";
@@ -169,6 +169,7 @@ export default function ArchivosPedido({ pedido }) {
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(false);
   const [progreso, setProgreso] = useState(0);
+  const [progresoPorArchivo, setProgresoPorArchivo] = useState({}); // PARCHE: progreso debajo de cada archivo, no al final
   const [accion, setAccion] = useState("");
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -219,6 +220,7 @@ export default function ArchivosPedido({ pedido }) {
         if (posicion === undefined) throw new Error("No hay posiciones libres para agregar imágenes.");
         usados.add(posicion);
         const base = { pedidoId:id, contenidoId:contenido.id, posicion };
+        let falloEnFinalizar = false;
         setAccion(`Subiendo ${archivo.name}`);
         const sesion = await post("iniciar",{ ...base, nombre:archivo.name, tipo:archivo.type,tamano:archivo.size });
         try {
@@ -231,15 +233,17 @@ export default function ArchivosPedido({ pedido }) {
               method:"PUT",credentials:"same-origin",headers:{...headers,"Content-Type":"application/octet-stream"},body:parte,cache:"no-store",
             }));
             setProgreso(Math.round(numero/total*100));
+            setProgresoPorArchivo(v => ({ ...v, [`${contenido.id}:${posicion}`]: Math.round(numero/total*100) }));
           }
-          await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId });
+          try { await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId }); } catch (eF) { falloEnFinalizar = true; throw eF; }
         } catch(e) {
-          await post("cancelar",{ pedidoId:id,cargaId:sesion.cargaId }).catch(()=>{});
+          if (!falloEnFinalizar) await post("cancelar",{ pedidoId:id,cargaId:sesion.cargaId }).catch(()=>{});
           throw e;
         }
         setProgreso(0);
+        setProgresoPorArchivo(v => { const c = { ...v }; delete c[`${contenido.id}:${posicion}`]; return c; });
       }
-      setAviso(posicionReemplazo !== null ? "Archivo corregido recibido. Se enviará nuevamente a revisión técnica." : "Archivos recibidos. Quedan pendientes de revisión técnica.");
+      setAviso(posicionReemplazo !== null ? "Recibimos tu contenido y lo estamos revisando. Luego de aprobarse se publicará con los demás." : "Archivos recibidos. Quedan pendientes de revisión técnica.");
       recargar();
     } catch(e) { setError(e.message || "No se pudo subir el archivo."); }
     finally { setProgreso(0);setAccion("");setProcesando(false); }
@@ -274,11 +278,12 @@ export default function ArchivosPedido({ pedido }) {
                 {!!contenido.descripcion && <p className="mt-2 line-clamp-2 text-xs text-tinta-suave">{contenido.descripcion}</p>}
                 {propios.map(a => <div key={a.posicion} className="mt-2 rounded-sm bg-white p-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className={a.revision === "aprobado" ? "shrink-0 text-emerald-600" : "shrink-0 text-terracota"}/>
+                    {a.revision === "rechazado" ? <XCircle size={15} className="shrink-0 text-red-600" /> : <CheckCircle2 size={15} className={a.revision === "aprobado" ? "shrink-0 text-emerald-600" : "shrink-0 text-terracota"}/>}
                     <span className="min-w-0 flex-1 break-words text-tinta-suave">{a.nombre} · {a.revision === "aprobado" ? "Aprobado técnicamente" : a.revision === "rechazado" ? "Corrección solicitada" : "En revisión"}</span>
                     {datos.habilitada && a.revision !== "aprobado" && <button type="button" disabled={procesando} onClick={()=>eliminar(contenido.id,a.posicion)} className="rounded-sm p-1 text-tinta-suave hover:text-red-700" aria-label={`Eliminar ${a.nombre}`}><Trash2 size={15}/></button>}
                   </div>
                   {a.revision === "rechazado" && <p className="mt-2 rounded-sm bg-amber-50 p-2 leading-5 text-amber-900">Motivo técnico: {a.motivoRevision || "Consultá con Administración el motivo de la corrección."}</p>}
+                  {progresoPorArchivo[`${contenido.id}:${a.posicion}`] != null && <div className="mt-2" role="status"><p className="text-xs text-tinta-suave">Subiendo {a.nombre} · {progresoPorArchivo[`${contenido.id}:${a.posicion}`]}%</p><div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${progresoPorArchivo[`${contenido.id}:${a.posicion}`]}%` }} /></div></div>}
                   {datos.habilitada && a.revision === "rechazado" && (
                     <label className="mt-2 block font-medium text-terracota-oscuro">
                       Reemplazar este archivo corregido
@@ -288,7 +293,7 @@ export default function ArchivosPedido({ pedido }) {
                     </label>
                   )}
                 </div>)}
-                {datos.habilitada && (contenido.tipo === "carrusel" ? propios.length < 10 : propios.length === 0) && (
+                {datos.habilitada && !propios.some(x => x.revision === "rechazado") && (contenido.tipo === "carrusel" ? propios.length < 10 : propios.length === 0) && (
                   <label className="mt-3 block text-xs font-medium text-terracota-oscuro">
                     Seleccionar archivos
                     <input type="file" accept={acepta(contenido.tipo)} multiple={contenido.tipo === "carrusel"} disabled={procesando}

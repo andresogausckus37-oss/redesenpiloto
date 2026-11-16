@@ -5,7 +5,9 @@ import { MongoClient } from "mongodb";
 import { obtenerClienteRegistrado } from "./clientes-acceso.js";
 
 const DB = "andres_imprimibles";
-const PART_SIZE = 8 * 1024 * 1024;
+// FIX colgado en /iniciar: PART_SIZE 2 MB para que coincida con el front (ArchivosPedido.jsx).
+// Antes el front mandaba 2 MB y el backend esperaba 8 MB -> 413 en cada /parte.
+const PART_SIZE = 2 * 1024 * 1024;
 const MAX_IMAGE = 20 * 1024 * 1024;
 const MAX_VIDEO = 150 * 1024 * 1024;
 const VENCE_MS = 24 * 60 * 60 * 1000;
@@ -85,19 +87,48 @@ function accesoCliente(request, pedido) {
 // (principal causa de límite de CPU durante la subida de muchos archivos).
 let _mongoClient = null;
 let _mongoUri = "";
+let _mongoConnect = null;
 async function conDb(env, fn) {
   if (!env?.MONGODB_URI) lanzar("MongoDB no está configurado.", 503);
   if (!_mongoClient || _mongoUri !== env.MONGODB_URI) {
     if (_mongoClient) { _mongoClient.close().catch(() => {}); }
-    _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 1, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
+    // FIX hung: maxPoolSize 1 + 2 iniciar en paralelo = deadlock.
+    // Dos requests llamaban a connect() a la vez sobre el mismo cliente y ninguno terminaba.
+    // Ahora pool 5 y UN solo connect compartido para todo el isolate.
+    _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 5, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
     _mongoUri = env.MONGODB_URI;
+    _mongoConnect = null;
   }
   try {
-    await pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect());
+    if (!_mongoConnect) {
+      _mongoConnect = pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect()).catch((e) => { _mongoConnect = null; throw e; });
+    }
+    // FIX hang admin: el connect cacheado puede ser un promise de otro request que nunca resuelve
+    // (warning: promise resolved from different request context). Si en 5s no conecta, descartarlo
+    // y crear un cliente nuevo en este request, en vez de dejar al Worker colgado y que Cloudflare
+    // lo cancele con 1101 / hung.
+    try {
+      await Promise.race([
+        _mongoConnect,
+        new Promise((_, rej) => setTimeout(() => rej(new Error("mongo connect timeout")), 5000)),
+      ]);
+    } catch (e) {
+      if (String(e?.message || "").includes("mongo connect timeout")) {
+        try { await _mongoClient.close().catch(() => {}); } catch {}
+        _mongoClient = null; _mongoUri = ""; _mongoConnect = null;
+        _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 5, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
+        _mongoUri = env.MONGODB_URI;
+        _mongoConnect = pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect()).catch((err) => { _mongoConnect = null; throw err; });
+        await Promise.race([
+          _mongoConnect,
+          new Promise((_, rej) => setTimeout(() => rej(new Error("mongo connect timeout 2")), 5000)),
+        ]);
+      } else throw e;
+    }
     return await fn(_mongoClient.db(DB));
   } catch (e) {
     if (e?.name === "MongoServerSelectionError" || e?.name === "MongoNetworkError" || e?.name === "MongoNotConnectedError") {
-      _mongoClient = null; _mongoUri = "";
+      _mongoClient = null; _mongoUri = ""; _mongoConnect = null;
     }
     throw e;
   }
@@ -174,9 +205,16 @@ async function iniciar(request, env, db) {
   const anterior = await cargas.findOne({ _id:id });
   // Si el usuario cerró el navegador a mitad de una carga, permitir reemplazarla.
   // Solo las cargas que están finalizando en R2 requieren revisión antes de reintentar.
-  if (anterior?.estado === "finalizando") lanzar("Esta carga está finalizando. Consultá el estado antes de reintentar.", 409);
+  if (anterior?.estado === "finalizando") { const ya = await Promise.race([ env.SERVICIOS_CONTENIDOS_R2.head(anterior.r2Key).catch(() => null), new Promise(r => setTimeout(() => r(null), 3000)) ]); if (!ya || ya.size !== anterior.tamano) { await cargas.deleteOne({ _id: id }).catch(() => {}); } }
   if (anterior) {
-    await env.SERVICIOS_CONTENIDOS_R2.resumeMultipartUpload(anterior.r2Key, anterior.uploadId).abort().catch(() => {});
+    // FIX hung: el abort de R2 puede colgarse y dejar al Worker sin respuesta (error del tail).
+    // Se le da 3s y se sigue igual: la carga vieja queda huérfana y expira por expiraEn.
+    try {
+      await Promise.race([
+        env.SERVICIOS_CONTENIDOS_R2.resumeMultipartUpload(anterior.r2Key, anterior.uploadId).abort(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("abort timeout")), 3000)),
+      ]);
+    } catch { /* Seguir igual, no bloquear el iniciar */ }
     await cargas.deleteOne({ _id:id });
   }
   const r2 = bucket(env);
@@ -228,7 +266,12 @@ async function finalizar(request, env, db) {
   if (bloqueo.modifiedCount !== 1) lanzar("Otra operación está finalizando esta carga.", 409);
   const r2 = bucket(env);
   try {
-    await pasoDiagnostico("R2_COMPLETAR", () => r2.resumeMultipartUpload(carga.r2Key,carga.uploadId).complete(partes.map(p=>({partNumber:p.partNumber, etag:p.etag}))));
+    // PARCHE video 503: si R2 ya tiene el archivo completo (reintento después de un fallo en Mongo),
+    // no llamar a complete de nuevo, solo verificar el tamaño.
+    const yaExiste = await r2.head(carga.r2Key).catch(() => null);
+    if (!yaExiste || yaExiste.size !== carga.tamano) {
+      await pasoDiagnostico("R2_COMPLETAR", () => r2.resumeMultipartUpload(carga.r2Key,carga.uploadId).complete(partes.map(p=>({partNumber:p.partNumber, etag:p.etag}))));
+    }
     const objeto = await pasoDiagnostico("R2_VERIFICAR", () => r2.head(carga.r2Key));
     if (!objeto || objeto.size !== carga.tamano) lanzar("R2 no confirmó el archivo completo.", 503);
     const coleccion = db.collection("archivos_servicios");
@@ -240,9 +283,9 @@ async function finalizar(request, env, db) {
     if (anterior?.r2Key && anterior.r2Key !== carga.r2Key) await r2.delete(anterior.r2Key).catch(() => {});
     return json({ ok:true, mensaje:"Archivo guardado para revisión." });
   } catch (error) {
-    // Si ya se completó en R2, mantener el registro para diagnóstico administrativo.
-    const existe = await r2.head(carga.r2Key).catch(() => null);
-    if (!existe) await cargas.updateOne({ _id:carga._id, estado:"finalizando" }, { $set:{ estado:"abierta" } }).catch(() => {});
+    // PARCHE video 503: aunque R2 ya completó, dejar la carga en abierta para que el cliente
+    // pueda reintentar solo el finalizar sin volver a subir todas las partes del video.
+    await cargas.updateOne({ _id:carga._id, estado:"finalizando" }, { $set:{ estado:"abierta" } }).catch(() => {});
     throw error;
   }
 }
@@ -251,7 +294,12 @@ async function cancelar(request, env, db) {
   await buscarPedido(db, request, env, input.pedidoId, true);
   const carga = await db.collection("cargas_archivos_servicios").findOne({ pedidoId:input.pedidoId, cargaId:input.cargaId, estado:"abierta" });
   if (!carga) return json({ok:true});
-  await bucket(env).resumeMultipartUpload(carga.r2Key,carga.uploadId).abort().catch(() => {});
+  try {
+    await Promise.race([
+      bucket(env).resumeMultipartUpload(carga.r2Key,carga.uploadId).abort(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("abort timeout")), 3000)),
+    ]);
+  } catch { /* No bloquear el cancelar */ }
   await db.collection("cargas_archivos_servicios").deleteOne({ _id:carga._id, cargaId:carga.cargaId });
   return json({ok:true});
 }
@@ -281,14 +329,21 @@ export async function ejecutarArchivosPedido(request, env) {
     if (!(ruta in metodos)) return fallo("Ruta no disponible.",404);
     if (request.method !== metodos[ruta]) return fallo("Método no permitido.",405);
     bucket(env);
-    return await conDb(env, async db => {
+    // FIX hung: si algo se cuelga (Mongo/R2), devolver 503 JSON a los 25s en vez de que
+    // Cloudflare cancele el request como 'hung and would never generate a response'.
+    // El front reintenta y los archivos completos se conservan.
+    const timeout = new Promise((_, rej) => setTimeout(() => { const e = new Error("timeout archivos"); e.fase = "SOLICITUD"; rej(e); }, 25000));
+    return await Promise.race([
+      conDb(env, async db => {
       if (ruta === "estado") { const pedido = await buscarPedido(db, request, env, url.searchParams.get("pedidoId")); return json(await estadoArchivos(db,pedido)); }
       if (ruta === "iniciar") return iniciar(request,env,db);
       if (ruta === "parte") return subirParte(request,env,db,url);
       if (ruta === "finalizar") return finalizar(request,env,db);
       if (ruta === "cancelar") return cancelar(request,env,db);
       return eliminar(request,env,db);
-    });
+    }),
+      timeout,
+    ]);
   } catch(e) { return errorSeguro(e, accion); }
 }
 function escapar(s) { return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
@@ -367,6 +422,10 @@ function origenRevisionAceptable(request, url) {
 }
 export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
   if (!autorizado) return html("Acceso no autorizado","<p>Iniciá sesión en Administración.</p>",401);
+  // FIX hang admin: si algo se cuelga (Mongo cacheado / R2), devolver 503 HTML a los 25s en vez de que
+  // Cloudflare cancele con 1101 / hung. El admin puede reintentar y el siguiente request usa cliente nuevo.
+  const _timeoutAdmin = new Promise((_, rej) => setTimeout(() => { const e = new Error("timeout admin archivos"); e.fase = "SOLICITUD"; rej(e); }, 25000));
+  const _ejecutarAdminReal = async () => {
   const url = new URL(request.url);
   const pedidoId = url.searchParams.get("pedidoId");
   if(url.searchParams.has('semanaId')){
@@ -463,4 +522,11 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
     }
     return html("Método inválido","<p>Operación no admitida.</p>",405);
   } catch (e) { console.error("Error revisión de contenidos:",e?.message || "Error"); return html("Revisión no disponible","<p>No fue posible revisar los archivos.</p>",503); }
+  };
+  try {
+    return await Promise.race([_ejecutarAdminReal(), _timeoutAdmin]);
+  } catch (e) {
+    console.error("Timeout admin archivos:", e?.message);
+    return html("Revisión no disponible","<p>El servidor tardó demasiado. Reintentá en 30 segundos, el siguiente intento usa una conexión nueva.</p>",503);
+  }
 }

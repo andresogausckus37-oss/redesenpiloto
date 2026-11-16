@@ -23,8 +23,8 @@ function cargarMontserrat() {
 }
 
 const LOGOS = {
-  instagram: "https://i.postimg.cc/1tGRTnck/3840px-Instagram-logo-2022-svg.png",
-  facebook: "https://i.postimg.cc/rshTXS0k/Logo-de-Facebook.png",
+  instagram: "/instagram.jpeg",
+  facebook: "/facebook.png",
 };
 
 const CAMPO = "w-full rounded-sm border border-borde bg-white px-3.5 py-2.5 text-sm font-normal text-tinta outline-none transition-all focus:border-azul focus:ring-2 focus:ring-azul-super-claro placeholder:text-tinta-apagado/60";

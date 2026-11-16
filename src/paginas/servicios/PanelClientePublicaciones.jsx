@@ -11,8 +11,8 @@ import {
 // Diseño del panel de cliente. Las rutas, los contratos de API y las autorizaciones
 // Los pagos reales se gestionan por separado del cron y de la prueba gratuita.
 const LOGOS = {
-  instagram: "https://i.postimg.cc/1tGRTnck/3840px-Instagram-logo-2022-svg.png",
-  facebook: "https://i.postimg.cc/rshTXS0k/Logo-de-Facebook.png",
+  instagram: "/instagram.jpeg",
+  facebook: "/facebook.png",
 };
 
 function LogoRed({ red, size = 22 }) {
@@ -1029,8 +1029,7 @@ export default function PanelClientePublicaciones() {
 
   const registrarSolicitud = async pedidoId => {
     const s = solicitudes[pedidoId];
-    // FIX: no exigir listaParaSolicitud acá, el servidor valida en /confirmar. Si lo exigimos, el check nunca se puede pulsar.
-    if (!s?.revision || !confirmacionesSolicitud[pedidoId]) return;
+    if (!s?.listaParaSolicitud || !s.revision || !confirmacionesSolicitud[pedidoId]) return;
     setGestionandoSolicitud(pedidoId);
     setErroresSolicitud(actual => ({ ...actual, [pedidoId]: "" }));
     try {
@@ -1304,6 +1303,7 @@ function infoPersonal(datos, pedido) {
             contenidosVistos.every(c => [c.fechaHoraDefinitiva, c.fechaProgramada, c.programadoPara]
               .some(valor => valor && Number.isFinite(Date.parse(valor))));
           const archivosPorCorregir = p.estadoContenidos === "correccion_solicitada";
+          const hayCorreccion = archivosPorCorregir || Boolean(solicitud?.motivos?.some(m => String(m).toLowerCase().includes("correcci")));
           const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
           return <article key={p.pedidoId} className="space-y-5">
             <section className={`${CARD} p-4 sm:p-5`} aria-label="Cuentas">
@@ -1418,13 +1418,9 @@ function infoPersonal(datos, pedido) {
               )}
               {/* La autorización sigue siendo explícita cuando el servidor la exige.
                   No se muestra otro paso mientras el pedido está en revisión. */}
-              {/* FIX círculo admin <-> cliente: el check aparece aunque listaParaSolicitud sea false.
-                  Antes el cliente no podía autorizar porque admin no había marcado revisado,
-                  y admin no podía avanzar porque faltaba la autorización.
-                  El servidor en /solicitud/confirmar sigue validando todo. */}
-              {p.modalidad === "prueba_gratuita" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
+              {p.modalidad === "prueba_gratuita" && solicitud?.listaParaSolicitud && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
-                  {solicitud?.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
+                  {solicitud.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
                   <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
@@ -1432,7 +1428,7 @@ function infoPersonal(datos, pedido) {
                     <span>Autorizo la programación y publicación de mis contenidos en las redes y horarios seleccionados.</span>
                   </label>
                   <button type="button" className={BTN_PRIMARIO}
-                    disabled={!solicitud?.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
+                    disabled={!solicitud.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
                     onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>
                 </div>
               )}
@@ -1443,11 +1439,11 @@ function infoPersonal(datos, pedido) {
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
-              {(archivosPorCorregir || archivosIncompletos) && (
+              {(hayCorreccion || archivosIncompletos) && (
                 <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3"
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
-                    {archivosPorCorregir ? "Corregir archivos observados" : "Completar archivos pendientes"}
+                    {hayCorreccion ? "Corregir archivos observados" : "Completar archivos pendientes"}
                     <ChevronDown size={13}/>
                   </summary>
                   {archivosAbiertos[p.pedidoId] && <ArchivosPedido pedido={{ id: p.pedidoId }}/>}
