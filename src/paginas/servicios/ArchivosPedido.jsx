@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, XCircle, CloudUpload, FileImage, Film, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
 const API = "/api/servicios/publicaciones/archivos";
-const TAMANO_PARTE = 2 * 1024 * 1024;
+const TAMANO_PARTE = 6 * 1024 * 1024; // PARCHE R2: mínimo 5MB por parte
 const MAX_IMAGEN = 20 * 1024 * 1024;
-const MAX_VIDEO = 150 * 1024 * 1024;
+const MAX_VIDEO = 100 * 1024 * 1024;
 const CAJA = "mt-4 rounded-sm border border-borde bg-white p-4";
 const CABECERAS_PANEL = { "X-Comunidad-Panel": "1" };
 
@@ -134,17 +134,17 @@ async function leer(respuesta) {
 // Se repite solamente PUT /parte, que admite reenviar los mismos bytes y número.
 // No se repite /finalizar automáticamente: su resultado podría ser incierto.
 async function parteConReintento(url, opciones) {
-  for (let intento = 0; intento < 3; intento++) {
+  for (let intento = 0; intento < 5; intento++) { // PARCHE reintento automático: 5 intentos, no 3
     let respuesta;
     try { respuesta = await fetch(url, opciones); }
     catch (error) {
-      if (intento === 2) throw new Error("Falló la conexión mientras se enviaba una parte. Reintentá desde el panel.");
-      await new Promise(resolve => setTimeout(resolve, 1200 * (intento + 1)));
+      if (intento === 4) throw new Error("Falló la conexión mientras se enviaba una parte. Reintentá desde el panel.");
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, intento)));
       continue;
     }
     if ([502, 503, 504].includes(respuesta.status) && intento < 2) {
       await respuesta.body?.cancel().catch(() => {});
-      await new Promise(resolve => setTimeout(resolve, 1200 * (intento + 1)));
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, intento)));
       continue;
     }
     return respuesta;
@@ -155,7 +155,7 @@ function maximo(tipo) { return tipo === "reel" ? 1 : tipo === "carrusel" ? 10 : 
 function nombreTipo(tipo) { return tipo === "reel" ? "Video MP4" : tipo === "carrusel" ? "Imágenes del carrusel" : "Imagen"; }
 function comprobarArchivo(archivo, tipo) {
   if (!archivo || archivo.size < 12 || archivo.size > (tipo === "reel" ? MAX_VIDEO : MAX_IMAGEN)) {
-    throw new Error(tipo === "reel" ? "El video MP4 no puede superar 150 MB." : "Cada imagen no puede superar 20 MB.");
+    throw new Error(tipo === "reel" ? "El video MP4 no puede superar 100 MB. Exportá en 1080p, hasta 90 segundos." : "Cada imagen no puede superar 20 MB.");
   }
   if (tipo === "reel" && archivo.type !== "video/mp4") throw new Error("Seleccioná un archivo MP4.");
   if (tipo !== "reel" && !["image/jpeg", "image/png", "image/webp"].includes(archivo.type)) {
@@ -164,11 +164,25 @@ function comprobarArchivo(archivo, tipo) {
   if (archivo.name.length > 180) throw new Error("El nombre del archivo es demasiado largo.");
 }
 
+async function validarDuracionVideo(archivo) {
+  if (archivo.type !== "video/mp4") return;
+  const url = URL.createObjectURL(archivo);
+  const duracion = await new Promise((resolver) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolver(v.duration || 0); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolver(0); };
+    v.src = url;
+  });
+  if (duracion > 90) throw new Error("El video no puede superar 90 segundos. Exportá una versión de hasta 90 segundos en 1080p.");
+}
 export default function ArchivosPedido({ pedido }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(false);
   const [progreso, setProgreso] = useState(0);
+  const [segundosSubida, setSegundosSubida] = useState(0);
+  const intervaloTiempo = useRef(null);
   const [progresoPorArchivo, setProgresoPorArchivo] = useState({}); // PARCHE: progreso debajo de cada archivo, no al final
   const [accion, setAccion] = useState("");
   const [error, setError] = useState("");
@@ -193,12 +207,25 @@ export default function ArchivosPedido({ pedido }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id,token,revision]);
 
+  function iniciarTemporizador() {
+    if (intervaloTiempo.current) clearInterval(intervaloTiempo.current);
+    setSegundosSubida(0);
+    const inicio = Date.now();
+    intervaloTiempo.current = setInterval(() => setSegundosSubida(Math.floor((Date.now() - inicio) / 1000)), 1000);
+  }
+  function detenerTemporizador() {
+    if (intervaloTiempo.current) { clearInterval(intervaloTiempo.current); intervaloTiempo.current = null; }
+  }
+  function formatoTiempo(s) {
+    const m = Math.floor(s / 60); const r = s % 60;
+    return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  }
   async function recargar() { setRevision(x => x+1); }
   async function post(ruta, body) { return leer(await fetch(`${API}/${ruta}`, { method:"POST",credentials:"same-origin",headers:{...headers,"Content-Type":"application/json"}, body:JSON.stringify(body),cache:"no-store" })); }
 
   async function cargarArchivos(contenido, elegidos, posicionReemplazo = null) {
     if (!datos?.habilitada || procesando || !elegidos?.length) return;
-    setError(""); setAviso(""); setProcesando(true); cancelado.current=false;
+    setError(""); setAviso(""); setProcesando(true); cancelado.current=false; iniciarTemporizador();
     const propios = datos.archivos.filter(a => a.contenidoId === contenido.id);
     const usados = new Set(propios.map(a => a.posicion));
     try {
@@ -212,6 +239,7 @@ export default function ArchivosPedido({ pedido }) {
       if (contenido.tipo === "carrusel" && posicionReemplazo === null && elegidos.length > maximo(contenido.tipo)-usados.size) throw new Error("El carrusel admite hasta 10 imágenes.");
       for (const archivo of elegidos) {
         comprobarArchivo(archivo,contenido.tipo);
+        if (contenido.tipo === "reel") await validarDuracionVideo(archivo);
         let posicion;
         if (posicionReemplazo !== null) posicion = posicionReemplazo;
         else if (contenido.tipo === "carrusel") {
@@ -235,7 +263,15 @@ export default function ArchivosPedido({ pedido }) {
             setProgreso(Math.round(numero/total*100));
             setProgresoPorArchivo(v => ({ ...v, [`${contenido.id}:${posicion}`]: Math.round(numero/total*100) }));
           }
-          try { await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId }); } catch (eF) { falloEnFinalizar = true; throw eF; }
+          let exitoFinalizar = false;
+          for (let intentoFin = 0; intentoFin < 3 && !exitoFinalizar; intentoFin++) {
+            try { await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId }); exitoFinalizar = true; }
+            catch (eFin) {
+              if (intentoFin === 2) { falloEnFinalizar = true; throw eFin; }
+              setAccion(`Reintentando automáticamente ${archivo.name} (${intentoFin + 2}/3)...`);
+              await new Promise(r => setTimeout(r, 2000 * (intentoFin + 1)));
+            }
+          }
         } catch(e) {
           if (!falloEnFinalizar) await post("cancelar",{ pedidoId:id,cargaId:sesion.cargaId }).catch(()=>{});
           throw e;
@@ -246,7 +282,7 @@ export default function ArchivosPedido({ pedido }) {
       setAviso(posicionReemplazo !== null ? "Recibimos tu contenido y lo estamos revisando. Luego de aprobarse se publicará con los demás." : "Archivos recibidos. Quedan pendientes de revisión técnica.");
       recargar();
     } catch(e) { setError(e.message || "No se pudo subir el archivo."); }
-    finally { setProgreso(0);setAccion("");setProcesando(false); }
+    finally { setProgreso(0);setAccion("");setProcesando(false); detenerTemporizador(); }
   }
 
   async function eliminar(contenidoId,posicion) {
@@ -274,6 +310,7 @@ export default function ArchivosPedido({ pedido }) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs font-medium text-tinta">{contenido.tipo === "reel" ? <Film size={16}/> : <FileImage size={16}/>} Contenido {i+1} · {nombreTipo(contenido.tipo)}</div>
                   <span className={`text-[11px] font-medium ${completo ? "text-emerald-700" : "text-tinta-apagado"}`}>{propios.length}/{limite} archivos</span>
+                {contenido.tipo === "reel" && <p className="mt-2 text-[11px] leading-4 text-tinta-suave">Video MP4, hasta 90 segundos, 1080x1920, hasta 100 MB. Exportá en 1080p, 30 fps. Si lo exportás en 4K, Meta lo baja a 1080p igual, solo pesa más y tarda más en subir.</p>}
                 </div>
                 {!!contenido.descripcion && <p className="mt-2 line-clamp-2 text-xs text-tinta-suave">{contenido.descripcion}</p>}
                 {propios.map(a => <div key={a.posicion} className="mt-2 rounded-sm bg-white p-2 text-xs">
@@ -307,7 +344,7 @@ export default function ArchivosPedido({ pedido }) {
           </div>
         </>
       )}
-      {procesando && <div className="mt-3" role="status"><p className="text-xs text-tinta-suave">{accion || "Procesando..."} {progreso ? `· ${progreso}%` : ""}</p><div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{width:`${progreso}%`}} /></div></div>}
+      {procesando && <div className="mt-3 flex items-center gap-3" role="status"><p className="text-xs text-tinta-suave">{accion || "Procesando..."} {progreso ? `· ${progreso}%` : ""}</p><div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{width:`${progreso}%`}} /></div><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-terracota text-[10px] font-medium">{formatoTiempo(segundosSubida)}</div></div>}
       {error && <p className="mt-3 text-xs text-red-700" role="alert">{error}</p>}
       {aviso && <p className="mt-3 text-xs text-emerald-700" role="status">{aviso}</p>}
       <button type="button" disabled={procesando} onClick={recargar} className="mt-3 inline-flex items-center gap-2 rounded-sm border border-borde bg-white px-3 py-2 text-xs font-medium text-tinta-suave disabled:opacity-50"><RefreshCw size={14}/> Actualizar contenidos</button>

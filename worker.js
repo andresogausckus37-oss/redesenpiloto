@@ -364,7 +364,33 @@ function validarConfiguracionServicio(datos) {
     };
   });
   if (publicaciones.some((publicacion) => !publicacion)) {
-    return { error: "Revisá los datos de las cuatro publicaciones." };
+    // DEBUG: loguea cual contenido fallo para no adivinar. No cambia la respuesta al cliente.
+    try {
+      const datosCrudos = datos.publicaciones || [];
+      datosCrudos.forEach((pc, idx) => {
+        const razones = [];
+        if (!pc || pc.id !== `contenido-${idx+1}`) razones.push("id");
+        if (!["reel","carrusel","imagen"].includes(pc?.tipo)) razones.push("tipo="+pc?.tipo);
+        if (!["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"].includes(pc?.dia)) razones.push("dia="+pc?.dia);
+        if (!["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00"].includes(pc?.hora)) razones.push("hora="+pc?.hora);
+        if (pc?.tipo==="reel" && pc?.formato!=="9:16") razones.push("formato-reel="+pc?.formato);
+        if (pc?.tipo!=="reel" && !["4:5","1:1"].includes(pc?.formato)) razones.push("formato="+pc?.formato);
+        if (typeof pc?.descripcion !== "string" || pc.descripcion.length > 1500) razones.push("descripcion-len="+(pc?.descripcion?.length ?? "null"));
+        if (typeof pc?.ctaInstagram !== "string" || pc.ctaInstagram.length > 100) razones.push("ctaIG-len");
+        if (typeof pc?.ctaFacebook !== "string" || pc.ctaFacebook.length > 100) razones.push("ctaFB-len");
+        if (typeof pc?.hashtags !== "string" || pc.hashtags.length > 240) razones.push("hashtags-len");
+        const arch = pc?.archivosSeleccionados ?? [];
+        if (!Array.isArray(arch)) razones.push("archivos-no-array");
+        else {
+          if (arch.length > (pc?.tipo==="carrusel" ? 10 : 1)) razones.push("archivos-count="+arch.length);
+          arch.forEach((a, ai) => {
+            if (!a || typeof a.nombre !== "string" || !a.tamano) razones.push(`archivo${ai}-invalido`);
+          });
+        }
+        if (razones.length) console.error("VALIDAR contenido-"+(idx+1)+" falla:", razones.join(","));
+      });
+    } catch(e) { console.error("VALIDAR debug error", e?.message); }
+    return { error: "Revisá los datos de las cuatro publicaciones. Revisá el panel antes de crear otro pedido." };
   }
   return { configuracion: {
     redes: [...redes], zonaHoraria: datos.zonaHoraria, negocio, publicaciones,

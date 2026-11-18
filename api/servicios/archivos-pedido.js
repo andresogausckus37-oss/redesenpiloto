@@ -7,9 +7,9 @@ import { obtenerClienteRegistrado } from "./clientes-acceso.js";
 const DB = "andres_imprimibles";
 // FIX colgado en /iniciar: PART_SIZE 2 MB para que coincida con el front (ArchivosPedido.jsx).
 // Antes el front mandaba 2 MB y el backend esperaba 8 MB -> 413 en cada /parte.
-const PART_SIZE = 2 * 1024 * 1024;
+const PART_SIZE = 6 * 1024 * 1024; // PARCHE R2: R2 exige mínimo 5MB por parte, 2MB hacía fallar el complete en videos
 const MAX_IMAGE = 20 * 1024 * 1024;
-const MAX_VIDEO = 150 * 1024 * 1024;
+const MAX_VIDEO = 100 * 1024 * 1024; // PARCHE: 90seg en 1080p = ~90MB, 150MB = 25 partes y falla en 4G
 const VENCE_MS = 24 * 60 * 60 * 1000;
 const RUTA = "/api/servicios/publicaciones/archivos";
 const RUTA_ADMIN = "/api/admin/servicios/publicaciones/archivos";
@@ -89,48 +89,18 @@ let _mongoClient = null;
 let _mongoUri = "";
 let _mongoConnect = null;
 async function conDb(env, fn) {
+  // PARCHE Promise will never complete: no cachear la promesa de connect entre requests.
+  // Cloudflare cancela promesas creadas en otro request. Cliente nuevo por request, se cierra al final.
   if (!env?.MONGODB_URI) lanzar("MongoDB no está configurado.", 503);
-  if (!_mongoClient || _mongoUri !== env.MONGODB_URI) {
-    if (_mongoClient) { _mongoClient.close().catch(() => {}); }
-    // FIX hung: maxPoolSize 1 + 2 iniciar en paralelo = deadlock.
-    // Dos requests llamaban a connect() a la vez sobre el mismo cliente y ninguno terminaba.
-    // Ahora pool 5 y UN solo connect compartido para todo el isolate.
-    _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 5, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
-    _mongoUri = env.MONGODB_URI;
-    _mongoConnect = null;
-  }
+  const cliente = new MongoClient(env.MONGODB_URI, { maxPoolSize: 1, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 5000 });
   try {
-    if (!_mongoConnect) {
-      _mongoConnect = pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect()).catch((e) => { _mongoConnect = null; throw e; });
-    }
-    // FIX hang admin: el connect cacheado puede ser un promise de otro request que nunca resuelve
-    // (warning: promise resolved from different request context). Si en 5s no conecta, descartarlo
-    // y crear un cliente nuevo en este request, en vez de dejar al Worker colgado y que Cloudflare
-    // lo cancele con 1101 / hung.
-    try {
-      await Promise.race([
-        _mongoConnect,
-        new Promise((_, rej) => setTimeout(() => rej(new Error("mongo connect timeout")), 5000)),
-      ]);
-    } catch (e) {
-      if (String(e?.message || "").includes("mongo connect timeout")) {
-        try { await _mongoClient.close().catch(() => {}); } catch {}
-        _mongoClient = null; _mongoUri = ""; _mongoConnect = null;
-        _mongoClient = new MongoClient(env.MONGODB_URI, { maxPoolSize: 5, minPoolSize: 0, serverSelectionTimeoutMS: 5000, maxIdleTimeMS: 20000 });
-        _mongoUri = env.MONGODB_URI;
-        _mongoConnect = pasoDiagnostico("MONGODB_CONEXION", () => _mongoClient.connect()).catch((err) => { _mongoConnect = null; throw err; });
-        await Promise.race([
-          _mongoConnect,
-          new Promise((_, rej) => setTimeout(() => rej(new Error("mongo connect timeout 2")), 5000)),
-        ]);
-      } else throw e;
-    }
-    return await fn(_mongoClient.db(DB));
-  } catch (e) {
-    if (e?.name === "MongoServerSelectionError" || e?.name === "MongoNetworkError" || e?.name === "MongoNotConnectedError") {
-      _mongoClient = null; _mongoUri = ""; _mongoConnect = null;
-    }
-    throw e;
+    await Promise.race([
+      cliente.connect(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("mongo connect timeout")), 5000)),
+    ]);
+    return await fn(cliente.db(DB));
+  } finally {
+    await cliente.close().catch(() => {});
   }
 }
 function publicacionesDelPedido(pedido) {
@@ -181,7 +151,11 @@ async function actualizarEstado(db, pedidoId) {
     return n >= (p.tipo === "carrusel" ? 2 : 1) && n <= maxPosiciones(p.tipo);
   });
   const aprobados = completos && archivos.every(a => a.revision === "aprobado");
-  const correcciones = archivos.some(a => a.revision === "rechazado");
+  // FIX: solo cuenta el archivo vigente por contenido+posicion. Si un archivo fue rechazado
+  // y despues reemplazado y aprobado, el viejo rechazado no deja al pedido en correccion para siempre.
+  const vigentesPorPos = new Map();
+  for (const a of archivos) vigentesPorPos.set(a.contenidoId + ":" + a.posicion, a);
+  const correcciones = [...vigentesPorPos.values()].some(a => a.revision === "rechazado");
   const nuevo = correcciones ? "correccion_solicitada" : aprobados ? "aprobados" : completos ? "pendiente_revision" : archivos.length ? "en_preparacion" : "pendiente_carga";
   await pedidos.updateOne({ _id: pedido._id, estadoServicio: "sin_activar" }, { $set: { estadoContenidos: nuevo, archivosSubidos: completos, actualizadoEn: tiempo() } });
 }
@@ -195,7 +169,7 @@ async function iniciar(request, env, db) {
   const tipo = String(input.tipo || "").toLowerCase();
   const tamano = input.tamano;
   if (!tipoValido(p.tipo, tipo) || !Number.isSafeInteger(tamano) || tamano < 12 || tamano > (tipo === "video/mp4" ? MAX_VIDEO : MAX_IMAGE)) {
-    lanzar("Formato o tamaño incorrecto. Se admiten imágenes de 20 MB o videos MP4 de 150 MB como máximo.", 400);
+    lanzar("Formato o tamaño incorrecto. Se admiten imágenes de 20 MB o videos MP4 de 100 MB como máximo, hasta 90 segundos, 1080x1920.", 400);
   }
   const id = idArchivo(input.pedidoId, input.contenidoId, posicion);
   const archivos = db.collection("archivos_servicios");
@@ -235,7 +209,7 @@ async function subirParte(request, env, db, url) {
   const cargaId = url.searchParams.get("cargaId");
   const numero = Number(url.searchParams.get("numero"));
   await buscarPedido(db, request, env, pedidoId, true);
-  if (!/^[0-9a-f-]{36}$/i.test(cargaId || "") || !Number.isInteger(numero) || numero < 1 || numero > 19) lanzar("Parte no válida.", 400);
+  if (!/^[0-9a-f-]{36}$/i.test(cargaId || "") || !Number.isInteger(numero) || numero < 1 || numero > 30) lanzar("Parte no válida.", 400);
   const sesion = await db.collection("cargas_archivos_servicios").findOne({ pedidoId, cargaId, estado:"abierta" });
   if (!sesion || new Date(sesion.expiraEn).getTime() < Date.now()) lanzar("La carga no existe o expiró.", 404);
   const total = Math.ceil(sesion.tamano/PART_SIZE);
@@ -387,7 +361,7 @@ function html(titulo, cuerpo, status=200) {
   code{overflow-wrap:anywhere;font-size:12px}
   @media(max-width:640px){main{padding:24px 14px 45px}.topbar{margin-bottom:24px}section{padding:18px 16px;margin:14px 0}.archivo{grid-template-columns:80px minmax(0,1fr);gap:12px}.media{width:80px;height:80px}.meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.busqueda input{width:100%}.busqueda button{width:100%}}
   @media(max-width:390px){.meta-grid{grid-template-columns:1fr}.archivo{grid-template-columns:1fr}.media{width:110px;height:100px}}
-  </style></head><body><main><div class="topbar"><a href="/admin">← Administración</a><span>Publicaciones automáticas · Revisión técnica</span></div><header class="encabezado"><h1>${escapar(titulo)}</h1><p>Verificá los archivos de cada contenido antes de aprobar o solicitar correcciones.</p></header>${cuerpo}<nav class="footer-nav"><a class="enlace-suave" href="/admin">Volver a Administración</a><a class="enlace-suave" href="/api/admin/servicios/publicaciones/programacion">Programación de semanas</a></nav></main></body></html>`, {status,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"}});
+  </style></head><body><main><div class="topbar"><a href="/admin">← Administración</a><span>Publicaciones automáticas · Revisión técnica</span></div><header class="encabezado"><h1>${escapar(titulo)}</h1><p>Verificá los archivos de cada contenido antes de aprobar o solicitar correcciones.</p></header>${cuerpo}<nav class="footer-nav"><a class="enlace-suave" href="/admin">Volver a Administración</a><a class="enlace-suave" href="/api/admin/servicios/publicaciones/programacion">Programación de semanas</a></nav></main></body></html>`, {status,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"}});
 }
 // Token antifalsificacion para formularios de revision de Administración.
 // Mantiene la proteccion CSRF aunque el navegador omita Origin en un POST.
@@ -479,6 +453,18 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
           return new Response(objeto.body,{ status:rango?206:200,headers });
         }
         const archivos = await db.collection("archivos_servicios").find({pedidoId,estado:"subido"}).sort({contenidoId:1,posicion:1}).toArray();
+        // FIX pedido trabado: si la revision esta cerrada porque ya esta activado, pero los vigentes ya estan
+        // todos aprobados y el pedido quedo en correccion_solicitada por un viejo rechazado, autocorrige el pedido.
+        // No toca archivos, solo el estado del pedido. El evento en programacion se corrige en admin-programacion.
+        try {
+          const vig = new Map();
+          for (const a of archivos) vig.set(a.contenidoId + ":" + a.posicion, a);
+          const todosAprobados = vig.size > 0 && [...vig.values()].every(a => a.revision === "aprobado");
+          if (todosAprobados && pedido.estadoContenidos === "correccion_solicitada") {
+            await db.collection("pedidos_servicios").updateOne({ pedidoId }, { $set: { estadoContenidos: "aprobados" } });
+            pedido.estadoContenidos = "aprobados";
+          }
+        } catch (e) { console.error("Autocorreccion estadoContenidos:", e?.message); }
         const revisable = preparacionAutorizada(pedido);
         const publicaciones = Array.isArray(pedido.publicaciones) ? pedido.publicaciones : [];
         const tarjetas = publicaciones.map((p, indice) => {
@@ -491,14 +477,85 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
             const motivoAnterior = a.revision === "rechazado" && a.motivoRevision ? `<p class="mal"><small>Corrección anterior: ${escapar(a.motivoRevision)}</small></p>` : "";
             const estadoArchivo = a.revision === "aprobado" ? "Aprobado" : a.revision === "rechazado" ? "Corrección solicitada" : "Pendiente de revisión";
             return `<article class="archivo"><div class="media">${medio}</div><div class="archivo-info"><p class="nombre">${escapar(a.nombre)}</p><p class="muted">${Math.ceil(a.tamano/1024)} KB · Archivo ${a.posicion + 1}</p><p><span class="chip">${estadoArchivo}</span></p>${motivoAnterior}${revisable ? `
-              <div class="botonera"><form action="${RUTA_ADMIN}" method="post">${campos}<button name="revision" value="aprobado">Aprobar técnicamente</button></form></div>
+              <div class="botonera"><form action="${RUTA_ADMIN}" method="post">${campos}<button name="revision" value="aprobado">Aprobar técnicamente</button></form>${(a.tipo === "image/png" || a.tipo === "image/webp") ? `<button type="button" class="btn-jpg" data-contenido="${escapar(p.id)}" data-pos="${a.posicion}" data-csrf="${escapar(csrf)}" data-nombre="${escapar(a.nombre)}">Cambiar a JPG</button> <span class="estado-jpg" id="jpg-${escapar(p.id)}-${a.posicion}"></span>` : ""}</div>
               <details class="correccion"><summary>Solicitar corrección</summary><form action="${RUTA_ADMIN}" method="post">${campos}<label>Motivo técnico de la corrección (10 a 500 caracteres)<textarea name="motivoRevision" minlength="10" maxlength="500" required placeholder="Ej.: El archivo MP4 no puede reproducirse; volvé a exportarlo."></textarea></label><button name="revision" value="rechazado">Enviar solicitud de corrección</button></form></details>` : '<p class="muted">La revisión de archivos está cerrada para este pedido.</p>'}</div></article>`;
           }).join("") : '<div class="mensaje">Todavía no hay archivos cargados para este contenido.</div>'}</section>`;
         }).join("");
-        return html("Revisión de contenidos",`<section><div class="seccion-cabecera"><h2>Resumen del pedido</h2><a class="enlace-suave" href="/api/admin/servicios/publicaciones/programacion?pedidoId=${encodeURIComponent(pedidoId)}">Ver programación ↗</a></div><div class="meta-grid"><div class="dato"><small>ID del pedido</small><strong>${escapar(pedidoId)}</strong></div><div class="dato"><small>Estado del contenido</small><strong>${escapar((pedido.estadoContenidos || "—").replaceAll("_", " "))}</strong></div><div class="dato"><small>Estado del pago</small><strong>${escapar((pedido.estadoPago || "—").replaceAll("_", " "))}</strong></div><div class="dato"><small>Archivos recibidos</small><strong>${archivos.length}</strong></div></div>${pedidoId === "SER-7ebdd0fa-4795-4cd9-a688-a72a1e26b937" ? `<p><a class="enlace-suave" href="/api/admin/servicios/publicaciones/activacion-simulada?pedidoId=${encodeURIComponent(pedidoId)}">Simular activación (sin publicar)</a></p>` : ""}</section>${tarjetas}<div class="mensaje">La aprobación técnica de archivos no activa ni programa publicaciones. La activación se gestiona por separado.</div>`);
+        return html("Revisión de contenidos",`<section><div class="seccion-cabecera"><h2>Resumen del pedido</h2><a class="enlace-suave" href="/api/admin/servicios/publicaciones/programacion?pedidoId=${encodeURIComponent(pedidoId)}">Ver programación ↗</a></div><div class="meta-grid"><div class="dato"><small>ID del pedido</small><strong>${escapar(pedidoId)}</strong></div><div class="dato"><small>Estado del contenido</small><strong>${escapar((pedido.estadoContenidos || "—").replaceAll("_", " "))}</strong></div><div class="dato"><small>Estado del pago</small><strong>${escapar((pedido.estadoPago || "—").replaceAll("_", " "))}</strong></div><div class="dato"><small>Archivos recibidos</small><strong>${archivos.length}</strong></div></div>${pedidoId === "SER-7ebdd0fa-4795-4cd9-a688-a72a1e26b937" ? `<p><a class="enlace-suave" href="/api/admin/servicios/publicaciones/activacion-simulada?pedidoId=${encodeURIComponent(pedidoId)}">Simular activación (sin publicar)</a></p>` : ""}</section>${tarjetas}<div style="margin:16px 0"><button type="button" id="btn-todos-jpg">Cambiar todos a JPG</button> <span id="estado-todos-jpg"></span></div>
+<script>
+async function convertirUnArchivo(btn){
+  if(btn.disabled || btn.textContent.includes("Listo")) return true;
+  const contenidoId = btn.dataset.contenido;
+  const pos = btn.dataset.pos;
+  const csrf = btn.dataset.csrf;
+  const nombre = btn.dataset.nombre || ("archivo-" + pos + ".png");
+  const estado = document.getElementById("jpg-" + contenidoId + "-" + pos);
+  try{
+    btn.disabled = true; btn.textContent = "Convirtiendo...";
+    if(estado) estado.textContent = "Convirtiendo...";
+    const urlVer = "${RUTA_ADMIN}?pedidoId=${encodeURIComponent(pedidoId)}&accion=ver&contenidoId=" + encodeURIComponent(contenidoId) + "&posicion=" + pos;
+    const resp = await fetch(urlVer, { credentials: "same-origin" });
+    if(!resp.ok) throw new Error("No se pudo descargar");
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(bitmap,0,0); bitmap.close();
+    const jpg = await new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error("No se pudo convertir")),"image/jpeg",0.92));
+    const base = nombre.replace(/\.[a-z0-9]+$/i,"");
+    const file = new File([jpg], base + ".jpg", { type: "image/jpeg" });
+    const form = new FormData();
+    form.append("pedidoId","${escapar(pedidoId)}");
+    form.append("contenidoId",contenidoId);
+    form.append("posicion",pos);
+    form.append("csrfRevision",csrf);
+    form.append("archivoJPG",file);
+    const r2 = await fetch("${RUTA_ADMIN}?accion=reemplazar-jpg", { method:"POST", credentials:"same-origin", body: form });
+    if(!r2.ok) throw new Error("El servidor no reemplazó el archivo (HTTP "+r2.status+")");
+    btn.textContent = "Listo, ya es JPG ✓"; btn.disabled = true;
+    if(estado) estado.textContent = "✓ JPG";
+    return true;
+  }catch(e){
+    btn.disabled = false; btn.textContent = "Cambiar a JPG";
+    if(estado) estado.textContent = "Error: " + (e && e.message ? e.message : "sin detalle") + " - Recargá la página y probá 1 solo archivo.";
+    console.error("Cambiar a JPG falló:", e);
+    return false;
+  }
+}
+document.querySelectorAll(".btn-jpg").forEach(b=>b.addEventListener("click",()=>convertirUnArchivo(b)));
+document.getElementById("btn-todos-jpg")?.addEventListener("click", async ()=>{
+  const estado = document.getElementById("estado-todos-jpg");
+  if(estado) estado.textContent = "Convirtiendo todos...";
+  const botones = [...document.querySelectorAll(".btn-jpg")].filter(b => !b.disabled && !b.textContent.includes("Listo"));
+  let ok = 0, fallos = 0;
+  for(const b of botones){ const r = await convertirUnArchivo(b); if(r) ok++; else fallos++; }
+  if(estado) estado.textContent = fallos === 0 ? ("Listo. " + ok + " convertidos. Ya podés aprobar.") : ("Listo. " + ok + " convertidos, " + fallos + " con error. Reintentá esos con Cambiar a JPG o de nuevo con Cambiar todos a JPG.");
+});
+</script>
+<div class="mensaje">La aprobación técnica de archivos no activa ni programa publicaciones. La activación se gestiona por separado.</div>`);
       });
     }
     if (request.method === "POST") {
+      if (url.searchParams.get("accion") === "reemplazar-jpg") {
+        if (!origenRevisionAceptable(request, url)) return new Response("Origen no autorizado", { status: 403 });
+        try {
+          const form = await request.formData();
+          const pid = form.get("pedidoId"), cid = form.get("contenidoId"), pos = validarPosicion(form.get("posicion"));
+          const file = form.get("archivoJPG");
+          if (!validarId(pid) || !validarContenido(cid) || pos === null || !(file instanceof File) || file.type !== "image/jpeg" || file.size <= 0 || file.size > 20*1024*1024) return new Response("Datos inválidos", { status: 400 });
+          if (!tokenRevisionValido(env, pid, cid, pos, form.get("csrfRevision"))) return new Response("Revisión vencida", { status: 403 });
+          return await conDb(env, async db => {
+            const archivo = await db.collection("archivos_servicios").findOne({ _id: idArchivo(pid, cid, pos), estado: "subido" });
+            if (!archivo) return new Response("Archivo no encontrado", { status: 404 });
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            await bucket(env).put(archivo.r2Key, bytes, { httpMetadata: { contentType: "image/jpeg" } });
+            await db.collection("archivos_servicios").updateOne({ _id: archivo._id }, { $set: { nombre: file.name, tipo: "image/jpeg", tamano: file.size, revision: "pendiente" } });
+            return new Response("OK", { status: 200 });
+          });
+        } catch(e){ console.error("Error reemplazar-jpg:", e?.message); return new Response("Error al reemplazar", { status: 500 }); }
+      }
       if (!origenRevisionAceptable(request, url)) return html("Origen no autorizado","<p>Volvé a abrir la pantalla de revisión.</p>",403);
       if (Number(request.headers.get("content-length") || 0)>2048) return html("Solicitud grande","<p>Solicitud inválida.</p>",413);
       const cuerpo = await request.text();

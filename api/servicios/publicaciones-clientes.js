@@ -175,8 +175,8 @@ export async function servirMedioCliente(request,env){
   const esperado=Buffer.from(mac(env,pedidoId,contenidoId,posicion,vence),'hex');
   if(!crypto.timingSafeEqual(esperado,Buffer.from(sig,'hex')))return json({ok:false},403);
   return conDB(env,async db=>{
-    const plan=await db.collection(COLA).findOne({_id:pedidoId,estado:'activa',publicacionHabilitada:true,
-      eventos:{$elemMatch:{contenidoId,estado:{$in:['enviando_resultado_incierto','contenedor_pendiente','consultando_contenedor','publicacion_iniciada_resultado_incierto','video_confirmacion_pendiente']}}}});
+    // FIX: Meta busca el media en forma asincrona. No filtrar por estado del evento.
+  const plan=await db.collection(COLA).findOne({_id:pedidoId,estado:'activa',publicacionHabilitada:true});
     if(!plan)return json({ok:false},404);
     const a=plan.tipoSemana==='pagada'
       ? await db.collection('medios_renovaciones_reales').findOne({renovacionId:pedidoId,contenidoId,posicion,revision:'aprobado'})

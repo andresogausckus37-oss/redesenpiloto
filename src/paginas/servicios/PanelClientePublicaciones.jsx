@@ -138,7 +138,7 @@ const ZONAS_DISPONIBLES = [
 
 // Configuración de la semana dentro del panel: no se navega a otra página.
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const HORAS_SEMANA = ["09:00", "10:00", "12:00", "14:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+const HORAS_SEMANA = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
 // Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
 const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
 const SEMANA_BASE = [
@@ -222,10 +222,10 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     const esReel = item.tipo === "reel";
     const invalidos = nuevos.some(archivo => archivo.size <= 0 ||
       (esReel
-        ? archivo.type !== "video/mp4" || archivo.size > 150 * 1024 * 1024
+        ? archivo.type !== "video/mp4" || archivo.size > 100 * 1024 * 1024
         : !["image/jpeg", "image/png", "image/webp"].includes(archivo.type) || archivo.size > 20 * 1024 * 1024));
     if (invalidos || (modoRenovacion && nuevos.some(a => a.size > 25 * 1024 * 1024))) {
-      setErrorEditor(modoRenovacion ? "En la semana pagada, cada archivo debe pesar 25 MB como máximo." : esReel ? "Seleccioná videos MP4 de hasta 150 MB." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
+      setErrorEditor(modoRenovacion ? "En la semana pagada, cada archivo debe pesar 25 MB como máximo." : esReel ? "Subí videos MP4 de hasta 100 MB, máx. 90 segundos. Recomendado: 1080x1920 (Full HD), 30 fps. Si pesa mucho, podés bajar a 720x1280.." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
       return;
     }
     if (esCarrusel) {
@@ -494,7 +494,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
                 <CloudUpload size={19} className="shrink-0 text-azul" />
                 <span className="text-xs font-medium">{item.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
-                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
+                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 100 MB · 90 seg" : "JPG, PNG, WebP · 20 MB"}</span>
                 <input type="file" className="sr-only" disabled={sinEdicion}
                   accept={item.tipo === "reel" ? "video/mp4,.mp4" : "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"}
                   multiple={esCarrusel} onChange={seleccionarArchivos} />

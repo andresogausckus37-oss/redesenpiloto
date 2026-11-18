@@ -262,7 +262,7 @@ export default function LandingPublicaciones() {
       const tipoValido = esReel ? archivo.type === "video/mp4" || /\.mp4$/i.test(archivo.name) : ["image/jpeg", "image/png", "image/webp"].includes(archivo.type);
       return tipoValido && archivo.size > 0 && archivo.size <= (esReel ? 150 : 20) * 1024 * 1024;
     });
-    setMensajeArchivo(validos.length !== candidatos.length ? esReel ? "Seleccioná videos MP4 de hasta 150 MB." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB." : "");
+    setMensajeArchivo(validos.length !== candidatos.length ? esReel ? "Seleccioná videos MP4 de hasta 100 MB, hasta 90 segundos, 1080x1920." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB." : "");
     if (!validos.length) return;
     const esCarrusel = contenido.tipo === "carrusel";
     const anteriores = esCarrusel ? contenido.archivos : [];
