@@ -140,7 +140,99 @@ const ZONAS_DISPONIBLES = [
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const HORAS_SEMANA = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
 // Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
+const FORMATO_TEXTO = { "1:1": "1080x1080 (1:1)", "4:5": "1080x1350 (4:5)", "9:16": "1080x1920 (9:16)" };
 const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
+// --- Fechas de semana (solo presentación, no cambian la programación) ---
+// "Del 19 nov al 26 nov · 7 días" a partir de inicio/fin que ya devuelve el servidor.
+const formatoRango = (inicio, fin, zona) => {
+  try {
+    if (!inicio || !fin) return "";
+    const di = new Date(inicio), df = new Date(fin);
+    if (!Number.isFinite(di.getTime()) || !Number.isFinite(df.getTime())) return "";
+    const fmt = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) });
+    return `Del ${fmt.format(di)} al ${fmt.format(df)} · 7 días`;
+  } catch { return ""; }
+};
+const textoQuedan = (fin, zona) => {
+  try {
+    if (!fin) return "";
+    const d = new Date(fin); if (!Number.isFinite(d.getTime())) return "";
+    const dias = Math.ceil((d.getTime() - Date.now()) / 86400000);
+    const termina = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) }).format(d);
+    if (dias <= 0) return `Termina hoy · ${termina}`;
+    if (dias === 1) return `Queda 1 día · Termina el ${termina}`;
+    return `Quedan ${dias} días · Termina el ${termina}`;
+  } catch { return ""; }
+};
+// Próxima fecha real de un día de semana (ej: "jueves 19 nov") según la zona del cliente.
+// Solo para mostrar en el desplegable; la fecha definitiva la confirma Administración al activar.
+const fechaParaDia = (dia, zona) => {
+  if (!dia) return "";
+  try {
+    const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
+    const fmtFecha = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) });
+    for (let delta = 0; delta <= 7; delta++) {
+      const cand = new Date(Date.now() + delta * 86400000);
+      if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return fmtFecha.format(cand);
+    }
+  } catch {}
+  return "";
+};
+const etiquetaDiaConFecha = (dia, zona) => {
+  const f = fechaParaDia(dia, zona);
+  return f ? `${String(dia).toLowerCase()} ${f}` : String(dia).toLowerCase();
+};
+// Días ordenados por próxima fecha real (hoy primero), no por Lunes-Domingo fijo.
+// Horarios disponibles para un día: si es hoy, solo los que tienen 4h o más de margen.
+const esDiaHoy = (dia, zona) => {
+  try {
+    const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
+    return fmtDia.format(new Date()).toLowerCase() === String(dia).toLowerCase();
+  } catch { return false; }
+};
+const horasDisponiblesParaDia = (dia, zona) => {
+  try {
+    if (!esDiaHoy(dia, zona)) return HORAS_SEMANA;
+    const limite = Date.now() + 4 * 3600000;
+    const disp = HORAS_SEMANA.filter(h => {
+      const [hh, mm] = String(h).split(":").map(Number);
+      const t = new Date(); t.setHours(hh || 0, mm || 0, 0, 0);
+      return t.getTime() >= limite;
+    });
+    return disp.length ? disp : HORAS_SEMANA;
+  } catch { return HORAS_SEMANA; }
+};
+const diasEnOrdenCronologico = (zona) => {
+  const deltaParaDia = (dia) => {
+    try {
+      const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
+      for (let delta = 0; delta <= 6; delta++) {
+        const cand = new Date(Date.now() + delta * 86400000);
+        if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return delta;
+      }
+    } catch {}
+    return 7;
+  };
+  return [...DIAS_SEMANA].sort((a, b) => deltaParaDia(a) - deltaParaDia(b));
+};
+// Próximo contenido con fecha definitiva futura, ordenado por fecha.
+const textoProximoContenido = (contenidos, zona) => {
+  try {
+    if (!Array.isArray(contenidos) || !contenidos.length) return "";
+    const ahora = Date.now();
+    const futuros = contenidos.map((c, i) => {
+      if (!c || typeof c !== "object") return null;
+      const t = Date.parse(c.fechaHoraDefinitiva || c.fechaProgramada || c.programadoPara || "");
+      return { c, i, t };
+    }).filter(x => x && Number.isFinite(x.t) && x.t > ahora).sort((a, b) => a.t - b.t);
+    if (!futuros.length) return "";
+    const { c, i } = futuros[0];
+    const fecha = (() => { try { return fechaContenido(c, zona); } catch { return ""; } })();
+    if (!fecha) return "";
+    return `Próximo: Contenido ${i + 1} · ${fecha}`;
+  } catch { return ""; }
+};
+
 const SEMANA_BASE = [
   ["reel", "Lunes", "18:00"], ["carrusel", "Miércoles", "18:00"],
   ["imagen", "Viernes", "18:00"], ["reel", "Domingo", "18:00"],
@@ -170,6 +262,24 @@ function VistaArchivoLocal({ archivo, tipo }) {
     : <img className="h-full w-full object-contain" src={url} alt={archivo.name} />;
 }
 
+// Valida proporción en el panel: si la imagen no coincide con el formato elegido, se rechaza acá,
+// no después en admin. Tolerancia 3% por compresión / redondeo.
+const RATIO_ESPERADO = { "1:1": 1, "4:5": 0.8, "9:16": 0.5625 };
+const medirProporcionArchivo = (archivo, esReel) => new Promise(resolve => {
+  const url = URL.createObjectURL(archivo);
+  if (esReel) {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { const w = v.videoWidth || 0, h = v.videoHeight || 0; URL.revokeObjectURL(url); resolve({ w, h, ratio: h ? w / h : 0 }); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolve({ w: 0, h: 0, ratio: 0 }); };
+    v.src = url;
+  } else {
+    const img = new Image();
+    img.onload = () => { const w = img.naturalWidth || 0, h = img.naturalHeight || 0; URL.revokeObjectURL(url); resolve({ w, h, ratio: h ? w / h : 0 }); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve({ w: 0, h: 0, ratio: 0 }); };
+    img.src = url;
+  }
+});
 function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null }) {
   const modoRenovacion = Boolean(pedidoRenovacion?.id);
   const [redes, setRedes] = useState(() => modoRenovacion ? pedidoRenovacion.redes : ["facebook", "instagram"]);
@@ -188,6 +298,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   const [enviando, setEnviando] = useState(false);
   const [pedidoCreado, setPedidoCreado] = useState("");
   const [subida, setSubida] = useState(null);
+  const [infoAnticipacion, setInfoAnticipacion] = useState(false);
   const [errorEditor, setErrorEditor] = useState("");
   const envioEnCurso = useRef(false);
   // Evita volver a subir archivos ya confirmados durante un reintento de Semana 2.
@@ -214,7 +325,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     setMediaVista(0);
     setErrorEditor("");
   };
-  const seleccionarArchivos = event => {
+  const seleccionarArchivos = async event => {
     const nuevos = Array.from(event.target.files || []);
     event.target.value = "";
     if (!nuevos.length || pedidoCreado || enviando) return;
@@ -222,11 +333,20 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     const esReel = item.tipo === "reel";
     const invalidos = nuevos.some(archivo => archivo.size <= 0 ||
       (esReel
-        ? archivo.type !== "video/mp4" || archivo.size > 100 * 1024 * 1024
+        ? archivo.type !== "video/mp4" || archivo.size > 150 * 1024 * 1024
         : !["image/jpeg", "image/png", "image/webp"].includes(archivo.type) || archivo.size > 20 * 1024 * 1024));
     if (invalidos || (modoRenovacion && nuevos.some(a => a.size > 25 * 1024 * 1024))) {
-      setErrorEditor(modoRenovacion ? "En la semana pagada, cada archivo debe pesar 25 MB como máximo." : esReel ? "Subí videos MP4 de hasta 100 MB, máx. 90 segundos. Recomendado: 1080x1920 (Full HD), 30 fps. Si pesa mucho, podés bajar a 720x1280.." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
+      setErrorEditor(modoRenovacion ? "En la semana pagada, cada archivo debe pesar 25 MB como máximo." : esReel ? "Seleccioná videos MP4 de hasta 150 MB." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
       return;
+    }
+    // Validación de proporción: si una imagen no es del formato elegido, no se sube.
+    for (const archivo of nuevos) {
+      const { w, h, ratio } = await medirProporcionArchivo(archivo, esReel);
+      const esperado = RATIO_ESPERADO[item.formato] || 0;
+      if (w && h && esperado && Math.abs(ratio - esperado) / esperado > 0.03) {
+        setErrorEditor(`La imagen ${archivo.name} es ${w}x${h}. Para ${FORMATO_TEXTO[item.formato] || item.formato} recortala a esa proporción y volvé a subirla. No se subió ningún archivo.`);
+        return;
+      }
     }
     if (esCarrusel) {
       const disponibles = 10 - item.archivos.length;
@@ -263,6 +383,24 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     evento.preventDefault();
     if (envioEnCurso.current || !habilitada || !datosCompletos) return;
     if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
+    // Mínimo 4h de anticipación para el contenido de hoy: da margen para revisar, aprobar y activar.
+    // Si no, al activar el horario ya pasó y el contenido salta al mismo día de la semana siguiente.
+    {
+      const ahora = Date.now();
+      const sinMargen = contenidos.find(c => {
+        try {
+          const fechaDia = fechaParaDia(c.dia, zonaHoraria);
+          if (!fechaDia) return false;
+          const [hh, mm] = String(c.hora || "00:00").split(":").map(Number);
+          const t = new Date(fechaDia); t.setHours(hh || 0, mm || 0, 0, 0);
+          return t.getTime() - ahora < 4 * 3600000 && t.getTime() > ahora;
+        } catch { return false; }
+      });
+      if (sinMargen) {
+        setErrorEditor("Para hoy elegí un horario con al menos 4 horas de anticipación, así nos da tiempo de revisar y activar tu semana. Si no, elegí mañana.");
+        return;
+      }
+    }
     if (contenidos.some(c => c.archivos.length < (c.tipo === "carrusel" ? 2 : 1))) {
       setErrorEditor("Elegí los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
     }
@@ -317,7 +455,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               }
               subidosSemana2.current.add(a.clave);
               hechos++;
-              setSubida({ archivo: `${hechos} de ${archivos.length} archivos`,
+              setSubida({ archivo: `Subiendo archivos · ${hechos} de ${archivos.length} completos`,
                 porcentaje: Math.round(hechos / archivos.length * 100) });
             } catch (error) {
               // Las cargas ya iniciadas terminan; no se lanzan otras si falla una.
@@ -475,26 +613,42 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </label>
               <label className="text-xs font-medium">Formato
                 <select className={`mt-1 ${CAMPO}`} value={item.formato} disabled={sinEdicion} onChange={e => actualizar({ formato: e.target.value })}>
-                  {(item.tipo === "reel" ? ["9:16"] : ["4:5", "1:1"]).map(x => <option key={x} value={x}>{x}</option>)}
+                  {(item.tipo === "reel" ? ["9:16"] : ["4:5", "1:1"]).map(x => <option key={x} value={x}>{FORMATO_TEXTO[x] || x}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Día
-                <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => actualizar({ dia: e.target.value })}>
-                  {DIAS_SEMANA.map(x => <option key={x}>{x}</option>)}
+                <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => { const nuevoDia = e.target.value; const disp = horasDisponiblesParaDia(nuevoDia, zonaHoraria); actualizar({ dia: nuevoDia, hora: disp.includes(item.hora) ? item.hora : (disp[0] || item.hora) }); }}>
+                  {diasEnOrdenCronologico(zonaHoraria).map(x => <option key={x} value={x}>{etiquetaDiaConFecha(x, zonaHoraria)}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Horario local
                 <select className={`mt-1 ${CAMPO}`} value={item.hora} disabled={sinEdicion} onChange={e => actualizar({ hora: e.target.value })}>
-                  {HORAS_SEMANA.map(x => <option key={x} value={x}>{a12h(x)}</option>)}
+                  {horasDisponiblesParaDia(item.dia, zonaHoraria).map(x => <option key={x} value={x}>{a12h(x)}</option>)}
                 </select>
+                {(() => { try { const f = fechaParaDia(item.dia, zonaHoraria); if (!f) return null; const hoy = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "numeric", year: "numeric", ...(zonaHoraria ? { timeZone: zonaHoraria } : {}) }).format(new Date()); const d = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "numeric", year: "numeric", ...(zonaHoraria ? { timeZone: zonaHoraria } : {}) }).format(f); return hoy === d ? <span className="mt-1 block text-[11px] font-normal text-tinta-apagado">Para hoy, solo horarios con al menos 4 h de anticipación.</span> : null; } catch { return null; } })()}
               </label>
             </div>
+            {esDiaHoy(item.dia, zonaHoraria) && (
+              <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                <span className="flex-1">Para hoy, solo horarios con al menos 4 h de anticipación.</span>
+                <button type="button" aria-label="¿Por qué 4 horas de anticipación?" onClick={() => setInfoAnticipacion(true)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-white text-xs font-bold text-amber-900">?</button>
+              </div>
+            )}
+            {infoAnticipacion && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setInfoAnticipacion(false)}>
+                <div className="w-full max-w-sm rounded-md bg-white p-4 shadow-lg" onClick={e => e.stopPropagation()}>
+                  <p className="text-xs leading-5 text-tinta">Es el tiempo que necesitamos para recibir tu pedido, revisar y aprobar tu contenido y programar toda tu semana. Solo aplica para hoy.</p>
+                  <button type="button" onClick={() => setInfoAnticipacion(false)} className="mt-4 w-full rounded-sm border border-azul bg-azul px-3 py-2 text-xs font-medium text-white">Entendido</button>
+                </div>
+              </div>
+            )}
+            <div className="mt-3 flex justify-end"><span className="rounded-sm border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">✓ {FORMATO_TEXTO[item.formato] || item.formato}</span></div>
             <div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
               <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
                 <CloudUpload size={19} className="shrink-0 text-azul" />
                 <span className="text-xs font-medium">{item.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
-                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 100 MB · 90 seg" : "JPG, PNG, WebP · 20 MB"}</span>
+                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
                 <input type="file" className="sr-only" disabled={sinEdicion}
                   accept={item.tipo === "reel" ? "video/mp4,.mp4" : "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"}
                   multiple={esCarrusel} onChange={seleccionarArchivos} />
@@ -568,9 +722,10 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </div>
               {redPrevia === "facebook" && textoVistaPrevia}
               <div className="bg-crema px-3 py-2">
-                <div className={`relative mx-auto overflow-hidden rounded-sm bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
+                <div className={`relative mx-auto overflow-hidden rounded-sm border-2 border-tinta bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
                   style={{ aspectRatio: item.formato.replace(":", " / ") }}>
                   <VistaArchivoLocal archivo={item.archivos[mediaVista] || item.archivos[0]} tipo={item.tipo} />
+                  <span className="absolute right-2 top-2 z-10 rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">✓ {FORMATO_TEXTO[item.formato] || item.formato}</span>
                   {esCarrusel && item.archivos.length > 1 && <>
                     <button type="button" aria-label="Imagen anterior" onClick={() => setMediaVista(i => (i - 1 + item.archivos.length) % item.archivos.length)}
                       className="absolute left-1.5 top-1/2 -translate-y-1/2 rounded-sm bg-white/90 p-1.5 text-tinta"><ChevronLeft size={16} /></button>
@@ -600,15 +755,15 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         Resumen y programación <ChevronDown size={14} className="transition group-open:rotate-180" />
       </summary>
       <div className="space-y-3 border-t border-borde p-4 text-xs">
-        <div><p className="font-medium">{cantidad} publicaciones</p><p className="mt-0.5 text-tinta-apagado">{redes.map(redLabel).join(" · ")}</p></div>
+        <div><p className="font-medium">{cantidad} publicaciones • Hora local</p><p className="mt-0.5 text-tinta-apagado">{redes.map(redLabel).join(" · ")}</p></div>
         {contenidos.map((c, i) => <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-borde pb-2 last:border-0 last:pb-0">
           <p>Contenido {i + 1} · {(TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).titulo}</p>
-          <p className="text-tinta-apagado">{c.dia} · {a12h(c.hora)} hora local</p>
+          <p className="text-tinta-apagado">{etiquetaDiaConFecha(c.dia, zonaHoraria)} · {a12h(c.hora)}</p>
         </div>)}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
-        {subida && <p role="status" className="text-tinta-suave">Subiendo {subida.archivo} · {subida.porcentaje}%</p>}
+        {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}
         <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || enviando || !redes.length}>
           {enviando ? "Guardando y subiendo archivos..." : pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
         </button>
@@ -1029,7 +1184,8 @@ export default function PanelClientePublicaciones() {
 
   const registrarSolicitud = async pedidoId => {
     const s = solicitudes[pedidoId];
-    if (!s?.listaParaSolicitud || !s.revision || !confirmacionesSolicitud[pedidoId]) return;
+    // FIX: no exigir listaParaSolicitud acá, el servidor valida en /confirmar. Si lo exigimos, el check nunca se puede pulsar.
+    if (!s?.revision || !confirmacionesSolicitud[pedidoId]) return;
     setGestionandoSolicitud(pedidoId);
     setErroresSolicitud(actual => ({ ...actual, [pedidoId]: "" }));
     try {
@@ -1194,7 +1350,7 @@ function fechaContenido(c, zona) {
   if (definitiva && Number.isFinite(Date.parse(definitiva))) {
     try {
       return new Intl.DateTimeFormat("es-AR", {
-        weekday: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+        weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true,
         ...(zona ? { timeZone: zona } : {}),
       }).format(new Date(definitiva));
     } catch { /* Mantener el horario elegido aunque la zona sea inválida. */ }
@@ -1303,6 +1459,11 @@ function infoPersonal(datos, pedido) {
             contenidosVistos.every(c => [c.fechaHoraDefinitiva, c.fechaProgramada, c.programadoPara]
               .some(valor => valor && Number.isFinite(Date.parse(valor))));
           const archivosPorCorregir = p.estadoContenidos === "correccion_solicitada";
+          // FIX desfasaje: el mensaje "El contenido 4 tiene una corrección pendiente" viene de solicitud.motivos
+          // (se actualiza sin recargar al apretar Actualizar requisitos), y "Corregir archivos observados" venía de
+          // p.estadoContenidos (solo se actualiza al recargar). Por eso aparecía uno antes y otro después.
+          // Ahora los dos dependen de la misma variable: si cualquiera de los dos dice que hay corrección,
+          // aparecen los dos juntos, sin recargar y sin confusión.
           const hayCorreccion = archivosPorCorregir || Boolean(solicitud?.motivos?.some(m => String(m).toLowerCase().includes("correcci")));
           const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
           return <article key={p.pedidoId} className="space-y-5">
@@ -1354,7 +1515,7 @@ function infoPersonal(datos, pedido) {
                 {pruebaActiva && prueba?.inicioEn && <CampoInfo etiqueta="Desde" valor={fechaLocal(prueba.inicioEn, detalle?.zonaHoraria)}/>}
                 {pruebaActiva && prueba?.finEn && <CampoInfo etiqueta="Hasta" valor={fechaLocal(prueba.finEn, detalle?.zonaHoraria)}/>}
               </div>
-              {total > 0 && publicados === total && <p className="border-t border-borde px-4 py-3 text-xs text-emerald-700 sm:px-5">Todos tus contenidos se publicaron correctamente.</p>}
+              {pruebaActiva && prueba?.finEn && <p className="border-t border-borde px-4 py-3 text-xs text-tinta sm:px-5">{textoQuedan(prueba.finEn, detalle?.zonaHoraria)}</p>}{pruebaActiva && textoProximoContenido(contenidosVistos, detalle?.zonaHoraria) && <p className="border-t border-borde px-4 py-3 text-xs text-tinta-suave sm:px-5">{textoProximoContenido(contenidosVistos, detalle?.zonaHoraria)}</p>}{total > 0 && publicados === total && <p className="border-t border-borde px-4 py-3 text-xs text-emerald-700 sm:px-5">Todos tus contenidos se publicaron correctamente.</p>}
               {p.modalidad === "prueba_gratuita" && <p className="border-t border-borde px-4 py-3 text-xs leading-5 text-tinta-suave sm:px-5">Te notificaremos por correo cuando tu prueba gratuita esté por finalizar.</p>}
             </section>
 
@@ -1387,13 +1548,12 @@ function infoPersonal(datos, pedido) {
                   return <div key={`${red}:${c.id || i}`} className="flex flex-wrap items-center justify-between gap-3 border-b border-borde py-3 last:border-b-0 text-xs">
                     <div className="min-w-0 space-y-1">
                       <p className="font-medium text-tinta">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
-                      <p className="text-[11px] text-tinta-apagado">{fechaContenido(c, detalle?.zonaHoraria)} · hora local</p>
+                      <p className="text-[11px] text-tinta-apagado">{fechaContenido(c, detalle?.zonaHoraria)}</p>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       <Etiqueta valor={estadoPorRed} texto={estadoVisible}/>
-                      {red === "instagram" && estadoPorRed === "publicado" && !url &&
-                        <span className="text-[11px] text-tinta-apagado">Enlace pendiente</span>}
-                      {url && <>
+                      
+                      {url && red !== "instagram" && <>
                         <a href={url} target="_blank" rel="noopener noreferrer"
                           className={`${BTN_SECUNDARIO} text-[11px]`}>Ver publicación <ExternalLink size={12}/></a>
                         {red === "instagram" && <button type="button" className={`${BTN_SECUNDARIO} text-[11px]`}
@@ -1418,9 +1578,13 @@ function infoPersonal(datos, pedido) {
               )}
               {/* La autorización sigue siendo explícita cuando el servidor la exige.
                   No se muestra otro paso mientras el pedido está en revisión. */}
-              {p.modalidad === "prueba_gratuita" && solicitud?.listaParaSolicitud && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion) && (
+              {/* FIX círculo admin <-> cliente: el check aparece aunque listaParaSolicitud sea false.
+                  Antes el cliente no podía autorizar porque admin no había marcado revisado,
+                  y admin no podía avanzar porque faltaba la autorización.
+                  El servidor en /solicitud/confirmar sigue validando todo. */}
+              {p.modalidad === "prueba_gratuita" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
-                  {solicitud.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
+                  {solicitud?.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
                   <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
@@ -1428,7 +1592,7 @@ function infoPersonal(datos, pedido) {
                     <span>Autorizo la programación y publicación de mis contenidos en las redes y horarios seleccionados.</span>
                   </label>
                   <button type="button" className={BTN_PRIMARIO}
-                    disabled={!solicitud.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
+                    disabled={!solicitud?.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
                     onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>
                 </div>
               )}
@@ -1439,11 +1603,11 @@ function infoPersonal(datos, pedido) {
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
-              {(hayCorreccion || archivosIncompletos) && (
-                <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3"
+              {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (hayCorreccion || archivosIncompletos) */}{archivosIncompletos && (
+                <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={undefined}
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
-                    {hayCorreccion ? "Corregir archivos observados" : "Completar archivos pendientes"}
+                    {"Completar archivos pendientes"}
                     <ChevronDown size={13}/>
                   </summary>
                   {archivosAbiertos[p.pedidoId] && <ArchivosPedido pedido={{ id: p.pedidoId }}/>}
@@ -1458,7 +1622,7 @@ function infoPersonal(datos, pedido) {
               return <div key={semana.id} className="space-y-3">
                 <section className={`${CARD} overflow-hidden`} aria-label={`Semana ${semana.numeroSemana}`}>
                   <div className="flex items-center justify-between gap-3 border-b border-azul-oscuro bg-azul px-4 py-3 sm:px-5">
-                    <div><h2 className="text-sm font-medium text-white">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-white/80">Semana pagada · 7 días</p></div>
+                    <div><h2 className="text-sm font-medium text-white">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-white/80">Semana pagada · 7 días</p>{semana.inicio && semana.fin && <p className="mt-0.5 text-[11px] text-white/80">{formatoRango(semana.inicio, semana.fin, semana.zonaHoraria)}</p>}</div>
                     <Etiqueta valor={finalizada ? "finalizado" : futura ? "programado" : "activo"} texto={finalizada ? "Finalizada" : futura ? "Programada" : "Activo"}/>
                   </div>
                   <div className="grid grid-cols-2 gap-4 p-4 text-xs sm:p-5">
@@ -1469,7 +1633,7 @@ function infoPersonal(datos, pedido) {
                     <CampoInfo etiqueta="Desde" valor={fechaLocal(semana.inicio,semana.zonaHoraria)}/>
                     <CampoInfo etiqueta="Hasta" valor={fechaLocal(semana.fin,semana.zonaHoraria)}/>
                   </div>
-                  <p className="border-t border-borde px-4 py-3 text-xs text-tinta-apagado sm:px-5">Podés consultar el avance de tu semana contratada desde este panel.</p>
+                  {!finalizada && semana.fin && <p className="border-t border-borde px-4 py-3 text-xs text-tinta-suave sm:px-5">{textoQuedan(semana.fin, semana.zonaHoraria)}</p>}{!finalizada && textoProximoContenido(semana.contenidos, semana.zonaHoraria) && <p className="border-t border-borde px-4 py-3 text-xs text-tinta-suave sm:px-5">{textoProximoContenido(semana.contenidos, semana.zonaHoraria)}</p>}<p className="border-t border-borde px-4 py-3 text-xs text-tinta-apagado sm:px-5">Podés consultar el avance de tu semana contratada desde este panel.</p>
                 </section>
                 <details className={`${CARD} group`} aria-label={`Contenido programado de Semana ${semana.numeroSemana}`}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden sm:px-5">Contenido programado · Semana {semana.numeroSemana} <ChevronDown size={13} className="group-open:rotate-180"/></summary>
@@ -1481,10 +1645,10 @@ function infoPersonal(datos, pedido) {
                         const estadoRed=c.estadoPorRed?.[red]||"programado";
                         return <div key={`${red}-${c.id||i}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-borde py-3 text-xs">
                           <div><p className="font-medium">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
-                            <p className="text-[11px] text-tinta-apagado">{fechaContenido(c,semana.zonaHoraria)} · hora local</p></div>
+                            <p className="text-[11px] text-tinta-apagado">{fechaContenido(c,semana.zonaHoraria)}</p></div>
                           <div className="flex flex-wrap items-center gap-2"><Etiqueta valor={estadoRed}/>
-                            {estadoRed === "publicado" && enlace && <a href={enlace} target="_blank" rel="noopener noreferrer" className={`${BTN_SECUNDARIO} text-[11px]`}>Ver publicación <ExternalLink size={12}/></a>}
-                            {estadoRed === "publicado" && red === "instagram" && !enlace && <span className="text-[11px] text-tinta-apagado">Enlace pendiente</span>}
+                            {estadoRed === "publicado" && red !== "instagram" && enlace && <a href={enlace} target="_blank" rel="noopener noreferrer" className={`${BTN_SECUNDARIO} text-[11px]`}>Ver publicación <ExternalLink size={12}/></a>}
+                            
                           </div>
                         </div>;
                       })}

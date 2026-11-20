@@ -396,14 +396,14 @@ export async function ejecutarCronClientes(env){
     // Recuperación de enlaces públicos: consulta Meta sin crear contenido.
     // Máximo una consulta cada ejecución, y una vez por hora por evento.
     const sinEnlace=await db.collection(COLA).find({estado:{$in:['activa','finalizada']},
-      eventos:{$elemMatch:{red:'instagram',estado:'publicada',enlace:null,metaId:{$exists:true}}}})
+      eventos:{$elemMatch:{red:{$in:['facebook','instagram']},estado:'publicada',enlace:null,metaId:{$exists:true}}}})
       .project({_id:1,pedidoId:1,eventos:1}).limit(8).toArray();
     let consultado=false;
     for(const plan of sinEnlace){
       if(consultado)break;
       for(const [indice,e] of (plan.eventos||[]).entries()){
         if(consultado)break;
-        if(e.red!=='instagram'||e.estado!=='publicada'||e.enlace||!/^[0-9]{5,30}$/.test(String(e.metaId||'')))continue;
+        if(!['facebook','instagram'].includes(e.red)||e.estado!=='publicada'||e.enlace||!/^[0-9]{5,30}(_[0-9]{5,30})?$/.test(String(e.metaId||'')))continue;
         if(Date.now()-new Date(e.enlaceConsultaEn||0).getTime()<HORA)continue;
         const claimed=await db.collection(COLA).updateOne({_id:plan._id,
           [`eventos.${indice}.metaId`]:e.metaId,[`eventos.${indice}.enlace`]:null},
@@ -412,9 +412,9 @@ export async function ejecutarCronClientes(env){
         consultado=true;
         try{
           const conn=await db.collection('conexiones_meta_pedidos').findOne({pedidoId:plan.pedidoId||plan._id,
-            plataforma:'instagram',estado:'conectada'});
+            plataforma:e.red,estado:'conectada'});
           if(!conn)break;
-          const enlace=await enlacePublicado(e.metaId,'instagram',descifrar(conn,env));
+          const enlace=await enlacePublicado(e.metaId,e.red,descifrar(conn,env));
           if(enlace)await db.collection(COLA).updateOne({_id:plan._id,[`eventos.${indice}.metaId`]:e.metaId},
             {$set:{[`eventos.${indice}.enlace`]:enlace}});
         }catch(error){console.warn('Recuperación permalink IG:',error?.name||'Error');}

@@ -256,15 +256,15 @@ async function consumirCupo(db, nombre, maximo, ahora) {
 }
 
 async function enviarCorreo(correo, codigo, config) {
-  const mensaje = `Tu codigo de acceso a Comunidad Semanal es ${codigo}. Vence en 10 minutos. Si no lo pediste, podes ignorar este mensaje.`;
-  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#252525"><h2>Acceso a Comunidad Semanal</h2><p>Tu código de verificación es:</p><p style="font-size:30px;font-weight:600;letter-spacing:6px">${codigo}</p><p>Vence en 10 minutos y solo puede usarse una vez.</p><p>Si no solicitaste este código, ignorá este mensaje.</p></div>`;
+  const mensaje = `Tu codigo de acceso a Redes en Piloto es ${codigo}. Vence en 10 minutos. Si no lo pediste, podes ignorar este mensaje.`;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#252525"><div style="text-align:center;margin:0 0 20px 0"><img src="https://redesenpiloto.com.ar/logo-redesenpiloto.jpg" alt="Redes en Piloto" width="96" height="96" style="display:block;margin:0 auto;width:96px;height:96px;border:0;border-radius:50%;object-fit:cover" /></div><p>Tu código de verificación es:</p><p style="font-size:30px;font-weight:600;letter-spacing:6px">${codigo}</p><p>Vence en 10 minutos y solo puede usarse una vez.</p><p>Si no solicitaste este código, ignorá este mensaje.</p></div>`;
   const respuesta = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { "Authorization": `Bearer ${config.resend}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: config.desde,
       to: [correo],
-      subject: "Código de acceso a Comunidad Semanal",
+      subject: "Código de acceso a Redes en Piloto",
       text: mensaje,
       html,
     }),

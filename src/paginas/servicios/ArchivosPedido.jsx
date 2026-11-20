@@ -55,7 +55,7 @@ export async function subirArchivosSemana(pedidoId, contenidos, progreso = () =>
       completado: terminados, total: archivos.length,
       porcentaje: pct });
   };
-  informar("Comprobando archivos");
+  informar("Subiendo archivos");
 
   async function enviarUno(item) {
     const { contenido, archivo, posicion } = item;
@@ -344,7 +344,6 @@ export default function ArchivosPedido({ pedido }) {
           </div>
         </>
       )}
-      {procesando && <div className="mt-3 flex items-center gap-3" role="status"><p className="text-xs text-tinta-suave">{accion || "Procesando..."} {progreso ? `· ${progreso}%` : ""}</p><div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{width:`${progreso}%`}} /></div><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-terracota text-[10px] font-medium">{formatoTiempo(segundosSubida)}</div></div>}
       {error && <p className="mt-3 text-xs text-red-700" role="alert">{error}</p>}
       {aviso && <p className="mt-3 text-xs text-emerald-700" role="status">{aviso}</p>}
       <button type="button" disabled={procesando} onClick={recargar} className="mt-3 inline-flex items-center gap-2 rounded-sm border border-borde bg-white px-3 py-2 text-xs font-medium text-tinta-suave disabled:opacity-50"><RefreshCw size={14}/> Actualizar contenidos</button>

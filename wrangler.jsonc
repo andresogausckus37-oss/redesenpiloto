@@ -1,11 +1,18 @@
 {
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  },
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "redesenpiloto",
 	"main": "worker.js",
 	"keep_vars": true,
 	"vars": {
+    "SERVICIO_CLIENTES_MEDIA_BASE_URL": "https://redesenpiloto.com.ar",
 		"FACEBOOK_PAGE_ID": "1312632228596581",
-		"SERVICIO_CLIENTES_CORREO_DESDE": "Comunidad Semanal <acceso@andreshousesitter.com>",
+		"SERVICIO_CLIENTES_CORREO_DESDE": "Redes en Piloto <notificaciones@redesenpiloto.com.ar>",
 		"SERVICIO_META_APP_ID": "1050457768006070",
 		"SERVICIO_META_CONFIG_ID": "1671008817888670",
 		"SERVICIO_PEDIDOS_HABILITADOS": "false",
