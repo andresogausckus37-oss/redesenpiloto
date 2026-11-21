@@ -2,6 +2,20 @@
 // No programa Meta ni modifica el cron. Requiere pago comprobado y activacion admin.
 import crypto from 'node:crypto';
 import { obtenerClienteRegistrado } from './clientes-acceso.js';
+async function enviarTelegramPedidoNuevaSemana(pedidoId, emprendimiento) {
+  try {
+    const token = process.env.TELEGRAM_PEDIDOS_BOT_TOKEN;
+    const chat = process.env.TELEGRAM_PEDIDOS_CHAT_ID;
+    if (!token || !chat || !pedidoId) return;
+    const texto = `Pedido de nueva semana\n${emprendimiento ? `Emprendimiento: ${emprendimiento}\n` : ""}Pedido: ${pedidoId}\nhttps://redesenpiloto.com.ar/api/admin/servicios/publicaciones/programacion`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text: texto, disable_web_page_preview: true }),
+    });
+  } catch (e) { console.error("TELEGRAM_PEDIDOS_ERROR", e?.message || e); }
+}
+
 const BASE='/api/servicios/publicaciones/renovacion-contenidos';
 const DB='andres_imprimibles';
 const TABLA='renovaciones_transferencia_reales';
@@ -79,6 +93,7 @@ export async function ejecutarContenidosRenovacionReal(req,env){
     }
     if(!await completos(db,doc))return json({ok:false,error:'Faltan archivos de los cuatro contenidos. Reintentá los pendientes.'},409);
     const r=await tabla.updateOne({_id:id,clienteUsuarioId:usuario.id,estado:'activada',configuracionEstado:'en_preparacion'},{$set:{configuracionEstado:'en_revision',enviadoEn:new Date(),actualizadoEn:new Date()}});
-    return r.modifiedCount===1?json({ok:true,estado:'en_revision'}):json({ok:false,error:'La configuración ya cambió de estado.'},409);
+    if (r.modifiedCount===1) { await enviarTelegramPedidoNuevaSemana((typeof id !== "undefined" ? id : (typeof pedidoId !== "undefined" ? pedidoId : "")), ""); }
+  return r.modifiedCount===1?json({ok:true,estado:'en_revision'}):json({ok:false,error:'La configuración ya cambió de estado.'},409);
   });}catch(e){console.error('Contenido renovación real:',e?.name||'Error',e?.code||'');return json({ok:false,error:'Error temporal al guardar la semana. Consultá el pedido antes de reintentar.'},503);}
 }

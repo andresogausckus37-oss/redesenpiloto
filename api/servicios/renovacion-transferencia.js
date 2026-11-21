@@ -2,6 +2,20 @@
 // No utiliza renovaciones_transferencia_ensayo ni activa publicaciones o cron.
 import crypto from 'node:crypto';
 import { obtenerClienteRegistrado } from './clientes-acceso.js';
+async function enviarTelegramNuevoComprobante(pedidoId) {
+  try {
+    const token = process.env.TELEGRAM_PEDIDOS_BOT_TOKEN;
+    const chat = process.env.TELEGRAM_PEDIDOS_CHAT_ID;
+    if (!token || !chat || !pedidoId) return;
+    const texto = `Nuevo comprobante\nPago recibido, revisar comprobante de pago\nPedido: ${pedidoId}\nhttps://redesenpiloto.com.ar/api/admin/servicios/publicaciones/renovaciones-transferencia`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text: texto, disable_web_page_preview: true }),
+    });
+  } catch (e) { console.error("TELEGRAM_COMPROBANTE_ERROR", e?.message || e); }
+}
+
 
 const BASE = '/api/servicios/publicaciones/renovacion-transferencia';
 const ADMIN = '/api/admin/servicios/publicaciones/renovaciones-transferencia';
@@ -138,6 +152,7 @@ export async function ejecutarRenovacionTransferencia(request,env){
       try {
         const guardado=await tabla.updateOne({_id:existente._id,clienteUsuarioId:usuario.id,estado:existente.estado,pagoConfirmado:false},
           {$set:{estado:'en_revision',comprobante:{r2Key,tipo:tipo.tipo,tamano:bytes.byteLength,subidoEn:ahora},actualizadoEn:ahora}});
+  await enviarTelegramNuevoComprobante(pedidoId);
         if(guardado.modifiedCount!==1){await bucket(env).delete(r2Key).catch(()=>{});
           return resp({ok:false,error:'La renovación cambió de estado; actualizá el panel.'},409);}
       }catch(error){await bucket(env).delete(r2Key).catch(()=>{});throw error;}

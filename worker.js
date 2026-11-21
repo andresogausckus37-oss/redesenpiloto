@@ -18,6 +18,20 @@ import crypto from "crypto";
 import { ejecutarDetallesPanel } from "./api/servicios/cliente-panel-detalles.js";
 import { ejecutarTransferenciaEnsayo, ejecutarAdminTransferenciaEnsayo } from "./api/servicios/transferencias-prueba.js";
 
+// TELEGRAM PEDIDOS (bot nuevo /newbot): avisa al admin de una semana nueva.
+async function enviarTelegramPedidoNuevaSemana(pedidoId, emprendimiento) {
+  try {
+    const token = process.env.TELEGRAM_PEDIDOS_BOT_TOKEN;
+    const chat = process.env.TELEGRAM_PEDIDOS_CHAT_ID;
+    if (!token || !chat || !pedidoId) return;
+    const texto = `Pedido de nueva semana\n${emprendimiento ? `Emprendimiento: ${emprendimiento}\n` : ""}Pedido: ${pedidoId}\nhttps://redesenpiloto.com.ar/api/admin/servicios/publicaciones/programacion`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text: texto, disable_web_page_preview: true }),
+    });
+  } catch (e) { console.error("TELEGRAM_PEDIDOS_ERROR", e?.message || e); }
+}
 function sincronizarEntorno(env) {
   const claves = [
     "MONGODB_URI",
@@ -31,6 +45,8 @@ function sincronizarEntorno(env) {
     "FACEBOOK_PAGE_ACCESS_TOKEN",
     "TELEGRAM_VISITAS_BOT_TOKEN",
     "TELEGRAM_VISITAS_CHAT_ID",
+    "TELEGRAM_PEDIDOS_BOT_TOKEN",
+    "TELEGRAM_PEDIDOS_CHAT_ID",
     "RESEND_API_KEY",
   ];
   for (const clave of claves) {
@@ -582,6 +598,7 @@ async function apiPruebaPublicaciones(request, env, ruta) {
       creadoEn: fecha, actualizadoEn: fecha, pagadoEn: null, activadoEn: null,
       historialEstados: [{ estado: "prueba_en_preparacion", fecha }],
     });
+    await enviarTelegramPedidoNuevaSemana(pedidoId, datos?.emprendimiento || "");
     return respuestaServicio({ ok: true, pedidoId, tokenAcceso, modalidad: "prueba_gratuita",
       moneda: datos.moneda, precio: 0, precioRenovacion, metodoPago: "ninguno",
       estado: "prueba_en_preparacion", estadoServicio: "sin_activar",

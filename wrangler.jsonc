@@ -2,7 +2,8 @@
   "observability": {
     "enabled": true,
     "logs": {
-      "enabled": true
+      "enabled": true,
+      "redact_query_string": false
     }
   },
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -10,12 +11,13 @@
 	"main": "worker.js",
 	"keep_vars": true,
 	"vars": {
+    "TELEGRAM_PEDIDOS_CHAT_ID": "8751564182",
     "SERVICIO_CLIENTES_MEDIA_BASE_URL": "https://redesenpiloto.com.ar",
 		"FACEBOOK_PAGE_ID": "1312632228596581",
 		"SERVICIO_CLIENTES_CORREO_DESDE": "Redes en Piloto <notificaciones@redesenpiloto.com.ar>",
 		"SERVICIO_META_APP_ID": "1050457768006070",
 		"SERVICIO_META_CONFIG_ID": "1671008817888670",
-		"SERVICIO_PEDIDOS_HABILITADOS": "false",
+		"SERVICIO_PEDIDOS_HABILITADOS": "true",
 		"SERVICIO_PRUEBAS_PREPARACION_HABILITADA": "true",
 		"SERVICIO_TRANSFERENCIA_ALIAS": "redesenpiloto",
 		"SERVICIO_TRANSFERENCIA_CBU_CVU": "0000003100023252705282",

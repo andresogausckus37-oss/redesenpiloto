@@ -166,20 +166,20 @@ const textoQuedan = (fin, zona) => {
 };
 // Próxima fecha real de un día de semana (ej: "jueves 19 nov") según la zona del cliente.
 // Solo para mostrar en el desplegable; la fecha definitiva la confirma Administración al activar.
-const fechaParaDia = (dia, zona) => {
+const fechaParaDia = (dia, zona, base = null) => {
   if (!dia) return "";
   try {
     const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
     const fmtFecha = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) });
     for (let delta = 0; delta <= 7; delta++) {
-      const cand = new Date(Date.now() + delta * 86400000);
+      const cand = new Date((base || Date.now()) + delta * 86400000);
       if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return fmtFecha.format(cand);
     }
   } catch {}
   return "";
 };
-const etiquetaDiaConFecha = (dia, zona) => {
-  const f = fechaParaDia(dia, zona);
+const etiquetaDiaConFecha = (dia, zona, base = null) => {
+  const f = fechaParaDia(dia, zona, base);
   return f ? `${String(dia).toLowerCase()} ${f}` : String(dia).toLowerCase();
 };
 // Días ordenados por próxima fecha real (hoy primero), no por Lunes-Domingo fijo.
@@ -202,12 +202,12 @@ const horasDisponiblesParaDia = (dia, zona) => {
     return disp.length ? disp : HORAS_SEMANA;
   } catch { return HORAS_SEMANA; }
 };
-const diasEnOrdenCronologico = (zona) => {
+const diasEnOrdenCronologico = (zona, base = null) => {
   const deltaParaDia = (dia) => {
     try {
       const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
       for (let delta = 0; delta <= 6; delta++) {
-        const cand = new Date(Date.now() + delta * 86400000);
+        const cand = new Date((base || Date.now()) + delta * 86400000);
         if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return delta;
       }
     } catch {}
@@ -280,7 +280,8 @@ const medirProporcionArchivo = (archivo, esReel) => new Promise(resolve => {
     img.src = url;
   }
 });
-function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null }) {
+function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null, inicioSemana = null }) {
+  const baseSemana = inicioSemana ? new Date(new Date(inicioSemana).getTime() + 86400000).getTime() : null;
   const modoRenovacion = Boolean(pedidoRenovacion?.id);
   const [redes, setRedes] = useState(() => modoRenovacion ? pedidoRenovacion.redes : ["facebook", "instagram"]);
   const [paisZona, setPaisZona] = useState(() => ZONAS_DISPONIBLES.some(x => x.pais === perfil?.pais) ? perfil.pais : "Argentina");
@@ -618,7 +619,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </label>
               <label className="text-xs font-medium">Día
                 <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => { const nuevoDia = e.target.value; const disp = horasDisponiblesParaDia(nuevoDia, zonaHoraria); actualizar({ dia: nuevoDia, hora: disp.includes(item.hora) ? item.hora : (disp[0] || item.hora) }); }}>
-                  {diasEnOrdenCronologico(zonaHoraria).map(x => <option key={x} value={x}>{etiquetaDiaConFecha(x, zonaHoraria)}</option>)}
+                  {diasEnOrdenCronologico(zonaHoraria, baseSemana).map(x => <option key={x} value={x}>{etiquetaDiaConFecha(x, zonaHoraria, baseSemana)}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Horario local
@@ -642,7 +643,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
                 </div>
               </div>
             )}
-            <div className="mt-3 flex justify-end"><span className="rounded-sm border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">✓ {FORMATO_TEXTO[item.formato] || item.formato}</span></div>
+            
             <div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
               <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
@@ -758,15 +759,16 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         <div><p className="font-medium">{cantidad} publicaciones • Hora local</p><p className="mt-0.5 text-tinta-apagado">{redes.map(redLabel).join(" · ")}</p></div>
         {contenidos.map((c, i) => <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-borde pb-2 last:border-0 last:pb-0">
           <p>Contenido {i + 1} · {(TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).titulo}</p>
-          <p className="text-tinta-apagado">{etiquetaDiaConFecha(c.dia, zonaHoraria)} · {a12h(c.hora)}</p>
+          <p className="text-tinta-apagado">{etiquetaDiaConFecha(c.dia, zonaHoraria, baseSemana)} · {a12h(c.hora)}</p>
         </div>)}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
         {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}
-        <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || enviando || !redes.length}>
-          {enviando ? "Guardando y subiendo archivos..." : pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
-        </button>
+        {!enviando && <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || !redes.length}>
+          {pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
+        </button>}
+        {enviando && <p role="status" className="text-xs leading-5 text-tinta">Por favor, no cierres la pestaña ni cambies de ventana hasta completar el proceso.</p>}
         {modoRenovacion && (pedidoCreado || pedidoRenovacion?.configuracionEstado === "en_preparacion") &&
           <button type="button" className={BTN_SECUNDARIO} disabled={enviando}
             onClick={finalizarEnvioAnterior}>
@@ -1404,12 +1406,12 @@ function infoPersonal(datos, pedido) {
       </section>}
 
       {!cargando && datos?.autenticado && <>
-        <section className={`${CARD} overflow-hidden`} aria-label="Datos personales">
-          <div className="flex items-center justify-between border-b border-borde px-4 py-3 sm:px-5">
+        <details className={`${CARD} overflow-hidden group`} aria-label="Datos personales">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
             <div className="flex items-center gap-2"><UserRound size={16} className="text-azul"/><h2 className="text-sm font-medium">Datos personales</h2></div>
-            <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span>
-          </div>
-          <div className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2 sm:p-5">
+            <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span><ChevronDown size={14} className="transition group-open:rotate-180" />
+          </summary>
+          <div className="grid gap-x-6 gap-y-4 border-t border-borde p-4 sm:grid-cols-2 sm:p-5">
             <CampoInfo etiqueta="Email confirmado" valor={datos.email || "—"}/>
             <CampoInfo etiqueta="Nombre y apellido" valor={personal.nombre}/>
             <CampoInfo etiqueta="Nombre emprendimiento" valor={personal.emprendimiento}/>
@@ -1417,7 +1419,7 @@ function infoPersonal(datos, pedido) {
             <CampoInfo etiqueta="País" valor={personal.pais}/>
             {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-azul underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
           </div>
-        </section>
+        </details>
 
 
 
@@ -1582,7 +1584,7 @@ function infoPersonal(datos, pedido) {
                   Antes el cliente no podía autorizar porque admin no había marcado revisado,
                   y admin no podía avanzar porque faltaba la autorización.
                   El servidor en /solicitud/confirmar sigue validando todo. */}
-              {p.modalidad === "prueba_gratuita" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
+              {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
                   {solicitud?.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
                   <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
@@ -1603,7 +1605,7 @@ function infoPersonal(datos, pedido) {
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
-              {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (hayCorreccion || archivosIncompletos) */}{archivosIncompletos && (
+              {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (false) */}{archivosIncompletos && (
                 <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={undefined}
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
@@ -1679,7 +1681,7 @@ function infoPersonal(datos, pedido) {
                 {configurandoSemana2 && !["en_revision","aprobada","programada"].includes(renovacionReal.configuracionEstado) &&
                   <EditorPrimeraSemana key={renovacionReal.id}
                     perfil={{...datos.perfil,...detallesPanel.perfil, nombreApellido:personal.nombre, emprendimiento:personal.emprendimiento, whatsapp:personal.whatsapp}}
-                    email={datos.email} pedidoRenovacion={renovacionReal}
+                    email={datos.email} pedidoRenovacion={renovacionReal} inicioSemana={semanasPagadas[semanasPagadas.length - 1]?.fin || p.prueba?.fin || p.fin || null}
                     alFinalizar={() => {
                       setConfigurandoSemana2(false);
                       setRenovacionReal(prev => prev && ({...prev,configuracionEstado:"en_revision"}));
