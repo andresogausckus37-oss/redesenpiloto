@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import ArchivosPedido, { subirArchivosSemana } from "./ArchivosPedido";
 import {
   ArrowRight, ChevronDown, ExternalLink, LogOut,
-  RefreshCw, ShieldCheck, UserRound, Send,
+  RefreshCw, ShieldCheck, UserRound, Globe, Send,
   Check, ChevronLeft, ChevronRight, CloudUpload, FileImage, Film, Images,
   Heart, MessageCircle, MoreHorizontal, ThumbsUp, Trash2,
 } from "lucide-react";
@@ -11,6 +11,7 @@ import {
 // Diseño del panel de cliente. Las rutas, los contratos de API y las autorizaciones
 // Los pagos reales se gestionan por separado del cron y de la prueba gratuita.
 const LOGOS = {
+  threads: "/threads.png",
   instagram: "/instagram.jpeg",
   facebook: "/facebook.png",
 };
@@ -142,6 +143,51 @@ const HORAS_SEMANA = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:
 // Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
 const FORMATO_TEXTO = { "1:1": "1080x1080 (1:1)", "4:5": "1080x1350 (4:5)", "9:16": "1080x1920 (9:16)" };
 const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
+
+// --- Regla de dias: hoy nunca se publica. Corte diario 18:00 hora Argentina ---
+// Antes de las 18:00 (hora Argentina) al enviar: primer dia elegible = manana.
+// Despues de las 18:00 (hora Argentina) al enviar: primer dia elegible = pasado manana.
+// El corte se reinicia a las 00:00: enviar lunes 2 a.m. permite martes, no miercoles.
+// Se mide al enviar, no al registrarse. +4h como red de seguridad.
+function partesEnZona(fecha, zona) {
+  const partes = new Intl.DateTimeFormat("es-AR", { timeZone: zona, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(fecha);
+  const v = Object.fromEntries(partes.map(p => [p.type, p.value]));
+  return { anio: Number(v.year), mes: Number(v.month), dia: Number(v.day), hora: Number(v.hour), minuto: Number(v.minute) };
+}
+function esDiaBloqueado(dia) {
+  const ahora = new Date();
+  const arg = partesEnZona(ahora, "America/Argentina/Buenos_Aires");
+  const hoyArg = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia)).getUTCDay();
+  const indiceDia = { "Domingo": 0, "Lunes": 1, "Martes": 2, "Miércoles": 3, "Jueves": 4, "Viernes": 5, "Sábado": 6 };
+  const objetivo = indiceDia[dia];
+  if (objetivo === undefined) return false;
+  const offset = (objetivo - hoyArg + 7) % 7;
+  if (offset === 0) return true;
+  if (offset === 1 && arg.hora >= 18) return true;
+  return false;
+}
+function validarPrimerDia(contenidos) {
+  const ahora = new Date();
+  const arg = partesEnZona(ahora, "America/Argentina/Buenos_Aires");
+  const hoyArg = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia)).getUTCDay();
+  const despuesCorte = arg.hora >= 18;
+  const indiceDia = { "Domingo": 0, "Lunes": 1, "Martes": 2, "Miércoles": 3, "Jueves": 4, "Viernes": 5, "Sábado": 6 };
+  for (let k = 0; k < contenidos.length; k++) {
+    const c = contenidos[k];
+    const objetivo = indiceDia[c.dia];
+    if (objetivo === undefined) continue;
+    let offset = (objetivo - hoyArg + 7) % 7;
+    if (offset === 0) return `Contenido ${k + 1}: hoy no se puede publicar. Elegí un día a partir de mañana.`;
+    if (offset === 1 && despuesCorte) return `Contenido ${k + 1}: enviás después de las 18:00 (hora Argentina), por eso mañana ya no está disponible. Elegí a partir de pasado mañana.`;
+    const [hh, mm] = String(c.hora || "09:00").split(":").map(Number);
+    const pub = new Date(ahora.getTime());
+    pub.setHours(0, 0, 0, 0);
+    pub.setDate(pub.getDate() + offset);
+    pub.setHours(hh, mm, 0, 0);
+    if (pub.getTime() < ahora.getTime() + 4 * 3600 * 1000) return `Contenido ${k + 1}: tiene que quedar a más de 4 horas del envío. Elegí un horario más tarde o un día posterior.`;
+  }
+  return "";
+}
 // --- Fechas de semana (solo presentación, no cambian la programación) ---
 // "Del 19 nov al 26 nov · 7 días" a partir de inicio/fin que ya devuelve el servidor.
 const formatoRango = (inicio, fin, zona) => {
@@ -291,6 +337,34 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     return pais?.zonas.find(([id]) => id === navegador)?.[0] || pais?.zonas[0]?.[0] || "America/Argentina/Buenos_Aires";
   });
   const [contenidos, setContenidos] = useState(crearSemana);
+  // Correccion semana por defecto: ningun contenido nace en hoy ni en manana bloqueada.
+  const corregirDiasBloqueadosPorDefecto = () => {
+    setContenidos(lista => {
+      const usados = new Set(lista.map(c => c.dia));
+      let cambio = false;
+      const nueva = lista.map(c => {
+        if (!esDiaBloqueado(c.dia)) return c;
+        usados.delete(c.dia);
+        const orden = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+        const ahora = new Date();
+        const arg = partesEnZona(ahora, "America/Argentina/Buenos_Aires");
+        const hoyArg = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia));
+        for (let off = 1; off <= 7; off++) {
+          const f = new Date(hoyArg); f.setUTCDate(f.getUTCDate() + off);
+          const nombre = orden[(f.getUTCDay() + 6) % 7];
+          if (!esDiaBloqueado(nombre) && !usados.has(nombre)) {
+            usados.add(nombre); cambio = true;
+            return { ...c, dia: nombre };
+          }
+        }
+        return c;
+      });
+      return cambio ? nueva : lista;
+    });
+  };
+  useEffect(() => { corregirDiasBloqueadosPorDefecto(); }, []);
+  const [, setTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => setTick(v => v + 1), 60000); return () => clearInterval(id); }, []);
   const [seleccionado, setSeleccionado] = useState(0);
   const [redVista, setRedVista] = useState("instagram");
   const [mediaVista, setMediaVista] = useState(0);
@@ -301,7 +375,12 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   const [subida, setSubida] = useState(null);
   const [infoAnticipacion, setInfoAnticipacion] = useState(false);
   const [errorEditor, setErrorEditor] = useState("");
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const envioEnCurso = useRef(false);
+  const controladorSubida = useRef(null);
+  const [subidaInterrumpida, setSubidaInterrumpida] = useState(() => {
+    try { return sessionStorage.getItem("subida-publicaciones-en-curso") === "1"; } catch { return false; }
+  });
   // Evita volver a subir archivos ya confirmados durante un reintento de Semana 2.
   const subidosSemana2 = useRef(new Set());
   useEffect(() => {
@@ -320,6 +399,15 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   const actualizar = cambios => setContenidos(lista => lista.map((c, i) => i === seleccionado ? { ...c, ...cambios } : c));
   const esCarrusel = item.tipo === "carrusel";
   const cantidad = contenidos.length * redes.length;
+  const duplicadoDiaHora = () => {
+    const vistos = new Map();
+    for (let i = 0; i < contenidos.length; i++) {
+      const clave = `${contenidos[i].dia}|${contenidos[i].hora}`;
+      if (vistos.has(clave)) return { primero: vistos.get(clave) + 1, segundo: i + 1, dia: contenidos[i].dia, hora: contenidos[i].hora };
+      vistos.set(clave, i);
+    }
+    return null;
+  };
   const cambiarTipo = tipo => {
     if (tipo === item.tipo) return;
     actualizar({ tipo, formato: tipo === "reel" ? "9:16" : "4:5", archivos: [] });
@@ -380,10 +468,29 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     setZonaHoraria(ZONAS_DISPONIBLES.find(item => item.pais === pais)?.zonas[0]?.[0] || "America/Argentina/Buenos_Aires");
   };
 
-  async function programar(evento) {
+  function pedirConfirmacion(evento) {
     evento.preventDefault();
     if (envioEnCurso.current || !habilitada || !datosCompletos) return;
     if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
+    const errorDias = validarPrimerDia(contenidos);
+    if (errorDias) { setErrorEditor(errorDias); return; }
+    if (contenidos.some(c => c.archivos.length < (c.tipo === "carrusel" ? 2 : 1))) {
+      setErrorEditor("Elegí los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
+    }
+    const dup = duplicadoDiaHora();
+    if (dup) {
+      setErrorEditor(`El contenido ${dup.primero} y el contenido ${dup.segundo} tienen el mismo día y hora (${dup.dia} a las ${dup.hora}). Cambiá el día o la hora de uno para que no se publiquen juntos.`);
+      return;
+    }
+    setMostrarConfirmacion(true);
+  }
+  async function programar(evento) {
+    evento.preventDefault();
+    setMostrarConfirmacion(false);
+    if (envioEnCurso.current || !habilitada || !datosCompletos) return;
+    if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
+    const errorDias = validarPrimerDia(contenidos);
+    if (errorDias) { setErrorEditor(errorDias); return; }
     // Mínimo 4h de anticipación para el contenido de hoy: da margen para revisar, aprobar y activar.
     // Si no, al activar el horario ya pasó y el contenido salta al mismo día de la semana siguiente.
     {
@@ -407,6 +514,14 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     }
     envioEnCurso.current = true;
     setEnviando(true);
+    setSubidaInterrumpida(false);
+    controladorSubida.current = new AbortController();
+    const senal = controladorSubida.current.signal;
+    try { sessionStorage.setItem("subida-publicaciones-en-curso", "1"); } catch {}
+    const avisarSalida = e => { e.preventDefault(); e.returnValue = ""; return ""; };
+    window.addEventListener("beforeunload", avisarSalida);
+    const cancelarAlSalir = () => controladorSubida.current?.abort();
+    window.addEventListener("pagehide", cancelarAlSalir);
     setErrorEditor("");
     setSubida(null);
     let id = pedidoCreado;
@@ -490,13 +605,23 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           id = datos.pedidoId;
           setPedidoCreado(id);
         }
-        await subirArchivosSemana(id, contenidos, setSubida);
+        await subirArchivosSemana(id, contenidos, setSubida, senal);
       }
       alFinalizar();
     } catch (error) {
       setSubida(null);
-      setErrorEditor(`${error.message || "No se pudieron subir los archivos."} ${id ? "Podés reintentar sobre el mismo pedido." : "Revisá el panel antes de crear otro pedido."}`);
+      if (senal.aborted || error?.name === "AbortError") {
+        setPedidoCreado("");
+        setSubidaInterrumpida(true);
+        setErrorEditor("La subida se canceló. Empezá de cero: volvé a elegir los archivos y programá la semana de nuevo.");
+      } else {
+        setErrorEditor(`${error.message || "No se pudieron subir los archivos."} ${id ? "Podés reintentar sobre el mismo pedido." : "Revisá el panel antes de crear otro pedido."}`);
+      }
     } finally {
+      window.removeEventListener("beforeunload", avisarSalida);
+      window.removeEventListener("pagehide", cancelarAlSalir);
+      try { sessionStorage.removeItem("subida-publicaciones-en-curso"); } catch {}
+      controladorSubida.current = null;
       envioEnCurso.current = false;
       setEnviando(false);
     }
@@ -550,10 +675,11 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     imagen: { titulo: "Imagen", icono: FileImage },
   };
 
-  return <form onSubmit={programar} className="space-y-4 font-normal">
+  return <form onSubmit={pedirConfirmacion} className="space-y-4 font-normal">
     <div className={`${CARD} p-4 sm:p-5`}>
       <h2 className="text-sm font-medium">{modoRenovacion ? `Programar nueva semana · Semana ${pedidoRenovacion.numeroSemana || 2}` : "Programá tu primera semana"}</h2>
       <p className="mt-1 text-xs leading-5 text-tinta-apagado">{modoRenovacion ? "Configurá los cuatro contenidos de tu semana pagada. Se enviarán a revisión administrativa antes de publicarse." : "Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas."}</p>
+      <p className="mt-2 rounded-sm border border-azul-claro bg-azul-super-claro px-3 py-2 text-xs leading-5 text-tinta"><strong>Cómo funcionan los días:</strong> hoy no se puede publicar. Si enviás antes de las 18:00 (hora Argentina), tu semana puede empezar mañana. Si enviás después de las 18:00 (hora Argentina), tu semana empieza pasado mañana, para que podamos revisarla y publicarla a tiempo. </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="mb-2 text-xs font-medium">Facebook e Instagram</p>
@@ -613,36 +739,24 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
                 </select>
               </label>
               <label className="text-xs font-medium">Formato
-                <select className={`mt-1 ${CAMPO}`} value={item.formato} disabled={sinEdicion} onChange={e => actualizar({ formato: e.target.value })}>
+                <select className={`mt-1 ${CAMPO}`} value={item.formato} disabled={sinEdicion} onChange={e => { actualizar({ formato: e.target.value }); setErrorEditor(""); }}>
                   {(item.tipo === "reel" ? ["9:16"] : ["4:5", "1:1"]).map(x => <option key={x} value={x}>{FORMATO_TEXTO[x] || x}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Día
                 <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => { const nuevoDia = e.target.value; const disp = horasDisponiblesParaDia(nuevoDia, zonaHoraria); actualizar({ dia: nuevoDia, hora: disp.includes(item.hora) ? item.hora : (disp[0] || item.hora) }); }}>
-                  {diasEnOrdenCronologico(zonaHoraria, baseSemana).map(x => <option key={x} value={x}>{etiquetaDiaConFecha(x, zonaHoraria, baseSemana)}</option>)}
+                  {diasEnOrdenCronologico(zonaHoraria, baseSemana).map(x => <option key={x} value={x} disabled={esDiaBloqueado(x)}>{etiquetaDiaConFecha(x, zonaHoraria, baseSemana)}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Horario local
                 <select className={`mt-1 ${CAMPO}`} value={item.hora} disabled={sinEdicion} onChange={e => actualizar({ hora: e.target.value })}>
                   {horasDisponiblesParaDia(item.dia, zonaHoraria).map(x => <option key={x} value={x}>{a12h(x)}</option>)}
                 </select>
-                {(() => { try { const f = fechaParaDia(item.dia, zonaHoraria); if (!f) return null; const hoy = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "numeric", year: "numeric", ...(zonaHoraria ? { timeZone: zonaHoraria } : {}) }).format(new Date()); const d = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "numeric", year: "numeric", ...(zonaHoraria ? { timeZone: zonaHoraria } : {}) }).format(f); return hoy === d ? <span className="mt-1 block text-[11px] font-normal text-tinta-apagado">Para hoy, solo horarios con al menos 4 h de anticipación.</span> : null; } catch { return null; } })()}
+                
               </label>
             </div>
-            {esDiaHoy(item.dia, zonaHoraria) && (
-              <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                <span className="flex-1">Para hoy, solo horarios con al menos 4 h de anticipación.</span>
-                <button type="button" aria-label="¿Por qué 4 horas de anticipación?" onClick={() => setInfoAnticipacion(true)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-white text-xs font-bold text-amber-900">?</button>
-              </div>
-            )}
-            {infoAnticipacion && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setInfoAnticipacion(false)}>
-                <div className="w-full max-w-sm rounded-md bg-white p-4 shadow-lg" onClick={e => e.stopPropagation()}>
-                  <p className="text-xs leading-5 text-tinta">Es el tiempo que necesitamos para recibir tu pedido, revisar y aprobar tu contenido y programar toda tu semana. Solo aplica para hoy.</p>
-                  <button type="button" onClick={() => setInfoAnticipacion(false)} className="mt-4 w-full rounded-sm border border-azul bg-azul px-3 py-2 text-xs font-medium text-white">Entendido</button>
-                </div>
-              </div>
-            )}
+            
+            
             
             <div className="mt-4 border-t border-borde pt-4">
               <p className="mb-2 text-xs font-medium">{item.tipo === "reel" ? "Video del reel" : esCarrusel ? "Imágenes del carrusel" : "Imagen de la publicación"}</p>
@@ -723,7 +837,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               </div>
               {redPrevia === "facebook" && textoVistaPrevia}
               <div className="bg-crema px-3 py-2">
-                <div className={`relative mx-auto overflow-hidden rounded-sm border-2 border-tinta bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
+                <div className={`relative mx-auto border-2 border-dashed border-tinta-apagado overflow-hidden rounded-sm border-2 border-tinta bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
                   style={{ aspectRatio: item.formato.replace(":", " / ") }}>
                   <VistaArchivoLocal archivo={item.archivos[mediaVista] || item.archivos[0]} tipo={item.tipo} />
                   <span className="absolute right-2 top-2 z-10 rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">✓ {FORMATO_TEXTO[item.formato] || item.formato}</span>
@@ -761,10 +875,12 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           <p>Contenido {i + 1} · {(TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).titulo}</p>
           <p className="text-tinta-apagado">{etiquetaDiaConFecha(c.dia, zonaHoraria, baseSemana)} · {a12h(c.hora)}</p>
         </div>)}
+        {subidaInterrumpida && <p role="alert" className="rounded-sm bg-amber-50 p-2 text-amber-900">La subida anterior se interrumpió. Empezá de cero: volvé a elegir los archivos de los cuatro contenidos.</p>}
+        {(() => { const dup = duplicadoDiaHora(); return dup ? <p role="alert" className="text-amber-700">Ojo: el contenido {dup.primero} y el contenido {dup.segundo} tienen el mismo día y hora ({dup.dia} a las {dup.hora}). Cambiá uno antes de enviar.</p> : null; })()}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
-        {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}
+        {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}<div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${subida.porcentaje}%` }} /></div>
         {!enviando && <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || !redes.length}>
           {pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
         </button>}
@@ -774,6 +890,19 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             onClick={finalizarEnvioAnterior}>
             Finalizar envío anterior (sin volver a subir)
           </button>}
+        {mostrarConfirmacion && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirmar subida"
+            onClick={e => { if (e.target === e.currentTarget) setMostrarConfirmacion(false); }}>
+            <div className="w-full max-w-sm rounded-sm bg-white p-5 shadow-lg">
+              <h3 className="text-sm font-medium">¿Confirmás la subida?</h3>
+              <p className="mt-2 text-xs leading-5 text-tinta-suave">Una vez enviados, los archivos no se pueden modificar. Si no estás seguro, cancelá y revisalos antes de subirlos.</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" className={BTN_SECUNDARIO} onClick={() => setMostrarConfirmacion(false)}>Cancelar</button>
+                <button type="button" className={BTN_PRIMARIO} onClick={programar}>Sí, subir archivos</button>
+              </div>
+            </div>
+          </div>
+        )}
         <p className="text-[11px] text-tinta-apagado">{modoRenovacion
           ? "Si tus archivos ya quedaron cargados, podés finalizar el envío anterior sin seleccionarlos otra vez."
           : "El pedido queda pendiente de revisión. Los 7 días de prueba comienzan luego de la aprobación."}</p>
@@ -1138,7 +1267,7 @@ export default function PanelClientePublicaciones() {
       } catch { /* El resumen del panel sigue disponible. */ }
     } catch (e) {
       // No borrar la sesión visual ni los pedidos por un error 503 / de red.
-      setError(`${e.message || "No se pudo cargar el panel."} Es un error de consulta, no un cierre de sesión. Los datos visibles pueden estar desactualizados. Probá «Actualizar».`);
+      setError(`${e.message || "No se pudo cargar el panel."} Es un error de consulta, no un cierre de sesión. Los datos visibles pueden estar desactualizados. Probá actualizar la pestaña.`);
     } finally { setCargando(false); }
   }, []);
   useEffect(() => { cargarPanel(); }, [cargarPanel]);
@@ -1227,7 +1356,27 @@ export default function PanelClientePublicaciones() {
     } finally { setGestionandoSolicitud(""); }
   };
 
-  const conectarFacebook = async pedidoId => {
+  // Mientras falten archivos por subir, no se puede conectar cuentas.
+// Primero se completa la subida, despues se conecta, despues se autoriza.
+    const estaAprobadoOActivado = (p) => {
+    if (!p) return false;
+    const vals = [p.estado, p.estadoContenidos, p.estado_contenidos, p.etapa, p.status, p.estadoPedido, p.estado_pedido];
+    for (const v of vals) {
+      const e = String(v || "").toLowerCase();
+      if (e === "aprobado" || e === "aprobado_tecnica" || e === "aprobado-tecnicamente" || e === "aprobada" || e === "activado" || e === "activa" || e === "activo" || e === "en_curso" || e === "publicando" || e === "programado") return true;
+    }
+    if (p.aprobado === true || p.activado === true || p.semanaActivada === true) return true;
+    return false;
+  };
+const tieneSubidaPendiente = (p) => {
+    if (!p) return false;
+    const e = String(p.estadoContenidos || p.estado_contenidos || p.estado || "").toLowerCase();
+    if (e === "pendiente_carga" || e === "pendiente-carga" || e === "en_preparacion" || e === "en-preparacion" || e === "carga_en_preparacion") return true;
+    if (typeof p.archivosPendientes === "number" && p.archivosPendientes > 0) return true;
+    if (typeof p.faltanArchivos === "number" && p.faltanArchivos > 0) return true;
+    return false;
+  };
+const conectarFacebook = async pedidoId => {
     setAccionFacebook(pedidoId); setError("");
     try {
       const respuesta = await fetch("/api/servicios/meta/pedidos/iniciar", {
@@ -1385,12 +1534,10 @@ function infoPersonal(datos, pedido) {
     <div className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-xs font-medium tracking-wide text-azul">Panel Privado · Gestión Automática</p>
           <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-tinta-apagado">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-tinta">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={cargarPanel} disabled={cargando} className={BTN_SECUNDARIO}><RefreshCw size={13}/> Actualizar</button>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {datos?.autenticado ? <button type="button" disabled={cerrando} onClick={salir} className={BTN_SECUNDARIO}><LogOut size={13}/> Salir</button>
             : <Link to={`${BASE}?acceso=ingreso`} className={BTN_PRIMARIO}>Iniciar sesión <ArrowRight size={13}/></Link>}
         </div>
@@ -1409,7 +1556,7 @@ function infoPersonal(datos, pedido) {
         <details className={`${CARD} overflow-hidden group`} aria-label="Datos personales">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
             <div className="flex items-center gap-2"><UserRound size={16} className="text-azul"/><h2 className="text-sm font-medium">Datos personales</h2></div>
-            <span className="inline-flex items-center gap-1 rounded-sm bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"><ShieldCheck size={13}/> Email confirmado</span><ChevronDown size={14} className="transition group-open:rotate-180" />
+            <ChevronDown size={14} className="transition group-open:rotate-180" />
           </summary>
           <div className="grid gap-x-6 gap-y-4 border-t border-borde p-4 sm:grid-cols-2 sm:p-5">
             <CampoInfo etiqueta="Email confirmado" valor={datos.email || "—"}/>
@@ -1424,15 +1571,18 @@ function infoPersonal(datos, pedido) {
 
 
         {pedidos.length === 0 ? <>
-          <section className={`${CARD} space-y-3 p-4`}>
-            <h2 className="text-sm font-medium">Cuentas</h2>
-            <p className="text-xs leading-5 text-tinta-apagado">Facebook e Instagram estarán disponibles para conectar después de preparar tu primera semana.</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {["facebook","instagram"].map(red => <div key={red} className="flex items-center gap-2 rounded-sm border border-borde bg-crema px-3 py-2">
-                <LogoRed red={red} size={20}/><span className="text-xs font-medium">{redLabel(red)}</span><span className="ml-auto text-[11px] text-tinta-apagado">Sin conectar</span>
-              </div>)}
+          <details className={`${CARD} group`} aria-label="Cuentas">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><Globe size={16} className="text-azul"/><span className="text-sm font-medium">Cuentas</span></span><ChevronDown size={13} className="transition group-open:rotate-180"/></summary>
+            <div className="space-y-3 border-t border-borde p-4">
+              <p className="text-xs leading-5 text-tinta-apagado">Facebook e Instagram estarán disponibles para conectar después de preparar tu primera semana.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {["facebook","instagram"].map(red => <div key={red} className="flex items-center gap-2 rounded-sm border border-borde bg-crema px-3 py-2">
+                  <LogoRed red={red} size={20}/><span className="text-xs font-medium">{redLabel(red)}</span><span className="ml-auto text-[11px] text-tinta-apagado">Sin conectar</span>
+                </div>)}
+              <div className="flex items-center gap-2 rounded-sm border border-borde bg-crema px-3 py-2 opacity-60"><img src="/threads.png" alt="Threads" width={20} height={20} className="shrink-0 object-contain" style={{ width: 20, height: 20 }}/><span className="text-xs font-medium">Threads</span><span className="ml-auto text-[11px] text-tinta-apagado">Próximamente</span></div>
+              </div>
             </div>
-          </section>
+          </details>
           <section className={`${CARD} space-y-3 p-4`}>
             <h2 className="text-sm font-medium">Programá tu primera semana</h2>
             <p className="text-xs leading-5 text-tinta-apagado">Prepará tu contenido semanal y envialo para que lo revisemos y publiquemos en tus cuentas.</p>
@@ -1469,8 +1619,10 @@ function infoPersonal(datos, pedido) {
           const hayCorreccion = archivosPorCorregir || Boolean(solicitud?.motivos?.some(m => String(m).toLowerCase().includes("correcci")));
           const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
           return <article key={p.pedidoId} className="space-y-5">
-            <section className={`${CARD} p-4 sm:p-5`} aria-label="Cuentas">
-              <div className="mb-4"><h2 className="text-sm font-medium">Cuentas</h2><p className="mt-1 text-xs leading-5 text-tinta-apagado">{redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig)) ? "Tus cuentas están conectadas. Ahora podemos publicar automáticamente tu contenido programado." : "Conectá las cuentas seleccionadas después de preparar tu primera semana."}</p></div>
+            <details className={`${CARD} group`} aria-label="Cuentas">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><Globe size={16} className="text-azul"/><span className="text-sm font-medium">Cuentas</span></span><ChevronDown size={13} className="transition group-open:rotate-180"/></summary>
+              <div className="space-y-3 border-t border-borde p-4 sm:p-5">
+              <p className="text-xs leading-5 text-tinta-apagado">{redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig)) ? "Tus cuentas están conectadas. Ahora podemos publicar automáticamente tu contenido programado." : "Conectá las cuentas seleccionadas después de preparar tu primera semana."}</p>
               {redes.length ? redes.map((red) => {
                 const conexion = red === "facebook" ? facebook : ig;
                 const conectada = Boolean(conexion);
@@ -1485,8 +1637,8 @@ function infoPersonal(datos, pedido) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {conectada ? <Etiqueta valor="conectada" texto="Conectada"/> : <button type="button" className={BTN_PRIMARIO} disabled={Boolean(accionInstagram || accionFacebook)}
-                      onClick={() => red === "facebook" ? conectarFacebook(p.pedidoId) : conectarInstagram(p.pedidoId)}>
+                    {conectada ? <Etiqueta valor="conectada" texto="Conectada"/> : <button type="button" className={BTN_PRIMARIO} disabled={Boolean(accionInstagram || accionFacebook || tieneSubidaPendiente(p))}
+                      onClick={() => { if (tieneSubidaPendiente(p)) return; red === "facebook" ? conectarFacebook(p.pedidoId) : conectarInstagram(p.pedidoId); }}>
                       {((red === "facebook" && accionFacebook === p.pedidoId) || (red === "instagram" && accionInstagram === p.pedidoId)) ? "Conectando..." : "Conectar"}
                     </button>}
                     {conectada && <button type="button"
@@ -1499,8 +1651,18 @@ function infoPersonal(datos, pedido) {
                   </div>
                 </div>;
               }) : <p className="text-xs text-tinta-apagado">Todavía no hay redes elegidas para este pedido.</p>}
+              {/* Threads: proximo. No se conecta todavia. */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-borde py-3 opacity-60">
+                <div className="flex min-w-0 items-center gap-3">
+                  <img src="/threads.png" alt="Threads" width={25} height={25} className="shrink-0 object-contain" style={{ width: 25, height: 25 }} />
+                  <div className="min-w-0"><p className="text-xs font-medium text-tinta">Threads</p>
+                    <p className="text-[11px] text-tinta-apagado">Próximamente</p></div>
+                </div>
+                <span className="text-[11px] text-tinta-apagado">Próximamente</span>
+              </div>
               {instagramError && redes.includes("instagram") && <p className="mt-2 text-[11px] text-amber-700">Estado de Instagram temporalmente no disponible: {instagramError}</p>}
-            </section>
+              </div>
+            </details>
 
             <section className={`${CARD} overflow-hidden`} aria-label="Resumen de prueba gratuita">
               <div className="border-b border-azul-oscuro bg-azul px-4 py-3 sm:px-5">
@@ -1529,12 +1691,7 @@ function infoPersonal(datos, pedido) {
                 consultarSolicitud(p.pedidoId);
               }}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden sm:px-5">
-                <div><h2 className="text-sm font-medium">Contenido programado</h2>
-                <p className="mt-1 text-xs leading-5 text-tinta-apagado">
-                  {programacionConfirmada
-                    ? "Este contenido ya está programado para publicarse con la configuración que definiste."
-                    : "La publicación comenzará después de la revisión y la activación de tu semana."}
-                </p></div><ChevronDown size={15} className="shrink-0 text-tinta-apagado transition group-open:rotate-180" />
+                <h2 className="text-sm font-medium">Contenido programado • Semana 1</h2><ChevronDown size={15} className="shrink-0 text-tinta-apagado transition group-open:rotate-180" />
               </summary>
               <div className="border-t border-borde p-4 sm:p-5">
               {redes.map(red => <div key={red} className="mb-4 last:mb-0">
@@ -1569,15 +1726,7 @@ function infoPersonal(datos, pedido) {
                   </div>;
                 }) : <p className="py-2 text-xs text-tinta-apagado">Todavía no hay contenidos cargados.</p>}</div>
               </div>)}
-              {p.modalidad === "prueba_gratuita" && p.estadoServicio === "sin_activar" && (
-                <div className="mt-4 border-t border-borde pt-3">
-                  <button type="button" className={BTN_SECUNDARIO}
-                    disabled={Boolean(consultandoSolicitud[p.pedidoId]) || Boolean(gestionandoSolicitud)}
-                    onClick={() => consultarSolicitud(p.pedidoId)}>
-                    {consultandoSolicitud[p.pedidoId] ? "Comprobando requisitos..." : "Actualizar requisitos de publicación"}
-                  </button>
-                </div>
-              )}
+                
               {/* La autorización sigue siendo explícita cuando el servidor la exige.
                   No se muestra otro paso mientras el pedido está en revisión. */}
               {/* FIX círculo admin <-> cliente: el check aparece aunque listaParaSolicitud sea false.
@@ -1586,13 +1735,13 @@ function infoPersonal(datos, pedido) {
                   El servidor en /solicitud/confirmar sigue validando todo. */}
               {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
-                  {solicitud?.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
-                  <label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
+                  {solicitud?.motivos?.length > 0 && <p className="flex items-start gap-2 text-xs text-amber-700"><CloudUpload size={16} className="mt-0.5 shrink-0" /> <span>{solicitud.motivos.join(" · ")}</span></p>}
+                  {!tieneSubidaPendiente(p) && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
                       onChange={e => setConfirmacionesSolicitud(v => ({ ...v, [p.pedidoId]: e.target.checked }))}/>
-                    <span>Autorizo la programación y publicación de mis contenidos en las redes y horarios seleccionados.</span>
-                  </label>
+                    <span>Autorizo la programación y publicación de contenido en las cuentas seleccionadas</span>
+                  </label>)}
                   <button type="button" className={BTN_PRIMARIO}
                     disabled={!solicitud?.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
                     onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>
@@ -1600,8 +1749,8 @@ function infoPersonal(datos, pedido) {
               )}
               {p.modalidad === "prueba_gratuita" && solicitud?.vigente && p.estadoServicio === "sin_activar" && (
                 <div className="mt-3 flex justify-end">
-                  <button type="button" className="text-[11px] text-tinta-apagado underline underline-offset-2 disabled:opacity-50"
-                    disabled={Boolean(gestionandoSolicitud)} onClick={() => revocarSolicitud(p.pedidoId)}>Revocar autorización</button>
+                  {!estaAprobadoOActivado(p) && (<button type="button" className="text-[11px] text-tinta-apagado underline underline-offset-2 disabled:opacity-50"
+                    disabled={Boolean(gestionandoSolicitud)} onClick={() => revocarSolicitud(p.pedidoId)}>Revocar autorización</button>)}
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
@@ -1624,7 +1773,7 @@ function infoPersonal(datos, pedido) {
               return <div key={semana.id} className="space-y-3">
                 <section className={`${CARD} overflow-hidden`} aria-label={`Semana ${semana.numeroSemana}`}>
                   <div className="flex items-center justify-between gap-3 border-b border-azul-oscuro bg-azul px-4 py-3 sm:px-5">
-                    <div><h2 className="text-sm font-medium text-white">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-white/80">Semana pagada · 7 días</p>{semana.inicio && semana.fin && <p className="mt-0.5 text-[11px] text-white/80">{formatoRango(semana.inicio, semana.fin, semana.zonaHoraria)}</p>}</div>
+                    <div><h2 className="text-sm font-medium text-white">Semana {semana.numeroSemana}</h2><p className="mt-0.5 text-[11px] text-white/80">Semana pagada · 7 días</p></div>
                     <Etiqueta valor={finalizada ? "finalizado" : futura ? "programado" : "activo"} texto={finalizada ? "Finalizada" : futura ? "Programada" : "Activo"}/>
                   </div>
                   <div className="grid grid-cols-2 gap-4 p-4 text-xs sm:p-5">

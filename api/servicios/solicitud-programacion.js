@@ -53,6 +53,7 @@ export async function evaluarSolicitud(db, pedido) {
       revision: null, aprobados: false, cantidadEventos: 0, zonaHoraria: null };
   }
   const publicaciones = pedido.publicaciones;
+  const faltantesArchivos = [];
   const redes = pedido.redes;
   if (!Array.isArray(publicaciones) || publicaciones.length !== 4 ||
       publicaciones.some((p, i) => p?.id !== `contenido-${i + 1}` || !TIPOS.has(p?.tipo))) {
@@ -98,11 +99,16 @@ export async function evaluarSolicitud(db, pedido) {
             !Number.isSafeInteger(f.tamano) || f.tamano <= 0 ||
             !Number.isInteger(f.posicion) || f.posicion < 0) ||
           new Set(asociados.map(a => a.posicion)).size !== asociados.length) {
-        motivos.push(`Cargá los archivos completos del contenido ${indice + 1}.`);
+        faltantesArchivos.push(indice + 1);
       }
       if (asociados.some(f => f.revision === "rechazado")) {
         motivos.push(`El contenido ${indice + 1} tiene una corrección pendiente.`);
       }
+    }
+    if (faltantesArchivos.length) {
+      const lista = faltantesArchivos.length <= 1 ? `contenido ${faltantesArchivos[0]}` :
+        faltantesArchivos.slice(0, -1).map(n => `contenido ${n}`).join(", ") + " y " + `contenido ${faltantesArchivos[faltantesArchivos.length - 1]}`;
+      motivos.push(`Continuá con la carga de los archivos del ${lista} para completar el envío`);
     }
     if (archivos.some(f => !publicaciones.some(p => p.id === f.contenidoId))) {
       motivos.push("Hay archivos que no corresponden a los cuatro contenidos.");
@@ -114,8 +120,7 @@ export async function evaluarSolicitud(db, pedido) {
   }).project({ _id: 0, plataforma: 1, pageId: 1, instagramId: 1, tokenPaginaCifrado: 1 }).toArray();
   if (Array.isArray(redes) && redes.some(red => !conexiones.some(c => c.plataforma === red &&
       c.tokenPaginaCifrado?.algoritmo === "aes-256-gcm" && c.tokenPaginaCifrado?.contenido))) {
-    motivos.push("Conectá todas las redes sociales elegidas.");
-  }
+      }
   const facebook = conexiones.find(c => c.plataforma === "facebook");
   const instagram = conexiones.find(c => c.plataforma === "instagram");
   if (facebook && instagram && String(facebook.pageId || "") !== String(instagram.pageId || "")) {
