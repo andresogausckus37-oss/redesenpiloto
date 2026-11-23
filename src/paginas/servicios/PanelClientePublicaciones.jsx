@@ -1742,9 +1742,8 @@ function infoPersonal(datos, pedido) {
                       onChange={e => setConfirmacionesSolicitud(v => ({ ...v, [p.pedidoId]: e.target.checked }))}/>
                     <span>Autorizo la programación y publicación de contenido en las cuentas seleccionadas</span>
                   </label>)}
-                  <button type="button" className={BTN_PRIMARIO}
-                    disabled={!solicitud?.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
-                    onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>
+                  {solicitud?.revision && confirmacionesSolicitud[p.pedidoId] && !gestionandoSolicitud && (<button type="button" className={BTN_PRIMARIO}
+                    onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>)}
                 </div>
               )}
               {p.modalidad === "prueba_gratuita" && solicitud?.vigente && p.estadoServicio === "sin_activar" && (

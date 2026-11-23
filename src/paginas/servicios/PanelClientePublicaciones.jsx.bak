@@ -1735,7 +1735,7 @@ function infoPersonal(datos, pedido) {
                   El servidor en /solicitud/confirmar sigue validando todo. */}
               {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
-                  {solicitud?.motivos?.length > 0 && <p className="text-xs text-amber-700">{solicitud.motivos.join(" · ")}</p>}
+                  {solicitud?.motivos?.length > 0 && <p className="flex items-start gap-2 text-xs text-amber-700"><CloudUpload size={16} className="mt-0.5 shrink-0" /> <span>{solicitud.motivos.join(" · ")}</span></p>}
                   {!tieneSubidaPendiente(p) && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
