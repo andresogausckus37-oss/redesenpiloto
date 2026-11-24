@@ -1174,9 +1174,11 @@ function RenovacionTransferenciaReal({ pedidoId, seleccion, alActualizar }) {
   </div>;
 }
 
-export default function PanelClientePublicaciones() {
+function PanelClientePublicaciones() {
   const [datos, setDatos] = useState(null);
   const [configurando, setConfigurando] = useState(false);
+  const [avisoOtraSemana, setAvisoOtraSemana] = useState({});
+  const [bannerArchivosCerrado, setBannerArchivosCerrado] = useState(false);
   const [configurandoSemana2, setConfigurandoSemana2] = useState(false);
   const [detallesPanel, setDetallesPanel] = useState({perfil:null,detalles:{},semanasPagadas:{}});
   const intentoVinculacion = useRef(false);
@@ -1285,6 +1287,86 @@ export default function PanelClientePublicaciones() {
     } finally { setCargando(false); }
   }, []);
   useEffect(() => { cargarPanel(); }, [cargarPanel]);
+  // destrabar-cargando: si cargarPanel queda colgado (ej. despues de un reset,
+  // con marcas viejas en el celular), a los 12s apaga el Cargando, borra las
+  // marcas viejas y deja probar Actualizar.
+  useEffect(() => {
+    if (!cargando) return;
+    const timer = setTimeout(() => {
+      try { localStorage.removeItem("volviendo-de-conectar"); localStorage.removeItem("destacar-cuentas"); } catch {}
+      setCargando(false);
+      setError("El panel tardó demasiado en cargar. Probá «Actualizar».");
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [cargando]);
+
+  const intentoCuentas = useRef("");
+  useEffect(() => {
+    let marca = null;
+    try { marca = localStorage.getItem("destacar-cuentas"); } catch {}
+    if (!marca) return;
+    if (intentoCuentas.current === marca) return;
+    if (!datos?.pedidos?.length) return;
+    const pedido = datos.pedidos[0];
+    if (!pedido?.pedidoId) return;
+    intentoCuentas.current = marca;
+    let intentos = 0;
+    let timer = null;
+    const intentar = () => {
+      intentos++;
+      const el = document.getElementById(`cuentas-${pedido.pedidoId}`) || document.querySelector('[aria-label="Cuentas"]');
+      if (!el) {
+        if (intentos < 6) timer = setTimeout(intentar, 800);
+        return;
+      }
+      const det = el.tagName === "DETAILS" ? el : el.querySelector("details");
+      if (det && !det.open) det.open = true;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("destacar-autorizacion");
+      setTimeout(() => el.classList.remove("destacar-autorizacion"), 5000);
+      try { localStorage.removeItem("destacar-cuentas"); } catch {}
+    };
+    timer = setTimeout(intentar, 600);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [datos]);
+  const intentoAutorizacion = useRef("");
+  useEffect(() => {
+    let marca = null;
+    try { marca = localStorage.getItem("volviendo-de-conectar"); } catch {}
+    if (!marca) return;
+    if (intentoAutorizacion.current === marca) return;
+    const pedido = (datos?.pedidos || []).find(x => x.pedidoId === marca);
+    if (!pedido) return;
+    const redesPedido = Array.isArray(pedido.redes) ? pedido.redes : [];
+    if (!redesPedido.length) return;
+    const detalle = detallesPanel.detalles?.[marca];
+    const igConn = detalle?.cuentas?.instagram || instagramPorPedido[marca];
+    const fbConn = detalle?.cuentas?.facebook !== undefined ? detalle.cuentas.facebook : pedido.facebook;
+    const todas = redesPedido.every(red => red === "facebook" ? Boolean(fbConn) : Boolean(igConn));
+    if (!todas) return;
+    intentoAutorizacion.current = marca;
+    let intentos = 0;
+    let timer = null;
+    const intentar = () => {
+      intentos++;
+      const detailsEl = document.getElementById(`contenido-${marca}`);
+      if (detailsEl && !detailsEl.open) detailsEl.open = true;
+      if (!solicitudes[marca] && !erroresSolicitud[marca]) consultarSolicitud(marca);
+      const authEl = document.getElementById(`autorizacion-${marca}`);
+      const destino = authEl || detailsEl;
+      if (destino) {
+        destino.scrollIntoView({ behavior: "smooth", block: "center" });
+        destino.classList.add("destacar-autorizacion");
+        setTimeout(() => destino.classList.remove("destacar-autorizacion"), 5000);
+        try { localStorage.removeItem("volviendo-de-conectar"); } catch {}
+        return;
+      }
+      if (intentos < 6) timer = setTimeout(intentar, 800);
+    };
+    timer = setTimeout(intentar, 600);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [datos, detallesPanel, solicitudes, erroresSolicitud]);
+
   const cargarRenovacionReal = useCallback(async pedidoId => {
     const r = await fetch(`/api/servicios/publicaciones/renovacion-transferencia?pedidoId=${encodeURIComponent(pedidoId)}`,
       {credentials:"same-origin",cache:"no-store"});
@@ -1402,7 +1484,7 @@ const conectarFacebook = async pedidoId => {
       if (!respuesta.ok || !info.ok || !info.authorizationUrl) throw new Error(info.error || "No se pudo iniciar Facebook.");
       const url = new URL(info.authorizationUrl);
       if (url.protocol !== "https:" || url.hostname !== "www.facebook.com") throw new Error("La autorización no es válida.");
-      window.location.assign(url.toString());
+      try { localStorage.setItem("volviendo-de-conectar", pedidoId); } catch {} window.location.assign(url.toString());
     } catch (e) { setError(e.message || "No se pudo conectar Facebook."); setAccionFacebook(""); }
   };
   const desconectarFacebook = async pedidoId => {
@@ -1432,7 +1514,7 @@ const conectarFacebook = async pedidoId => {
       if (!respuesta.ok || !info.ok || !info.authorizationUrl) throw new Error(info.error || "No se pudo iniciar Instagram.");
       const url = new URL(info.authorizationUrl);
       if (url.protocol !== "https:" || url.hostname !== "www.facebook.com") throw new Error("La autorización no es válida.");
-      window.location.assign(url.toString());
+      try { localStorage.setItem("volviendo-de-conectar", pedidoId); } catch {} window.location.assign(url.toString());
     } catch (e) { setError(e.message || "No se pudo conectar Instagram."); setAccionInstagram(""); }
   };
   const desconectarInstagram = async pedidoId => {
@@ -1540,12 +1622,34 @@ function infoPersonal(datos, pedido) {
   };
 }
   const pedidos = Array.isArray(datos?.pedidos) ? datos.pedidos : [];
+  const pedidoConPendientes = pedidos.find(x => ["pendiente_carga", "en_preparacion", "correccion_solicitada"].includes(x.estadoContenidos));
   const pedidoPrincipal = pedidos[0];
   const personal = infoPersonal({...datos,perfil:detallesPanel.perfil||datos?.perfil||datos?.usuario?.perfil}, pedidoPrincipal);
   return <main className="min-h-[76vh] bg-crema px-3 py-7 text-tinta sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
     <RetornoPaypalRenovacion alActualizar={setRenovacionReal}/>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500&display=swap" />
-    <div className="mx-auto max-w-5xl space-y-5">
+    <style>{`@keyframes pulso-autorizacion { 0%,100% { box-shadow: 0 0 0 1px #2563eb; } 50% { box-shadow: 0 0 0 3px rgba(37,99,235,0.45); } } .destacar-autorizacion { border: 1px solid #2563eb !important; border-radius: 4px; animation: pulso-autorizacion 5s ease-in-out; }`}</style><div className="mx-auto max-w-5xl space-y-5">
+      {pedidoConPendientes && !bannerArchivosCerrado && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+        <p className="font-medium">Te quedaron archivos por subir. Podés continuar donde quedaste.</p>
+        <div className="flex items-center gap-2">
+          <button type="button" className="rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-900" onClick={() => {
+            const pid = pedidoConPendientes.pedidoId;
+            const contenidoEl = document.getElementById(`contenido-${pid}`);
+            if (contenidoEl && !contenidoEl.open) contenidoEl.open = true;
+            setArchivosAbiertos(v => ({ ...v, [pid]: true }));
+            const el = document.getElementById(`archivos-${pid}`);
+            if (el) {
+              if (!el.open) el.open = true;
+              setTimeout(() => {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                el.classList.add("destacar-autorizacion");
+                setTimeout(() => el.classList.remove("destacar-autorizacion"), 5000);
+              }, 150);
+            }
+          }}>Continuar subiendo</button>
+          <button type="button" aria-label="Cerrar aviso" className="rounded-sm px-2 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100" onClick={() => setBannerArchivosCerrado(true)}>X</button>
+        </div>
+      </div>}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
@@ -1585,7 +1689,7 @@ function infoPersonal(datos, pedido) {
 
 
         {pedidos.length === 0 ? <>
-          <details className={`${CARD} group`} aria-label="Cuentas">
+          <details className={`${CARD} group`} id="cuentas-nuevo" aria-label="Cuentas">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><Globe size={16} className="text-azul"/><span className="text-sm font-medium">Cuentas</span></span><ChevronDown size={13} className="transition group-open:rotate-180"/></summary>
             <div className="space-y-3 border-t border-borde p-4">
               <p className="text-xs leading-5 text-tinta-apagado">Facebook e Instagram estarán disponibles para conectar después de preparar tu primera semana.</p>
@@ -1604,7 +1708,7 @@ function infoPersonal(datos, pedido) {
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
+          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
@@ -1616,6 +1720,7 @@ function infoPersonal(datos, pedido) {
           const contenidosVistos = detalle?.contenidos?.length ? contenidos.map(c=>({...c,...(detalle.contenidos.find(v=>v.id===c.id)||{})})) : contenidos;
           const solicitud = solicitudes[p.pedidoId];
           const pruebaActiva = tieneEstadoActivo(p);
+          const autorizacionLista = p.modalidad !== "prueba_gratuita" || pruebaActiva || Boolean(solicitud?.vigente && !solicitud?.requiereNuevaConfirmacion);
           const prueba = detalle?.prueba || p.prueba;
           const publicados = contenidosVistos.reduce((s, c) => s + redes.filter(red =>
             c.publicadoEn?.includes?.(red) || c.estadoPorRed?.[red] === "publicado").length, 0);
@@ -1698,7 +1803,7 @@ function infoPersonal(datos, pedido) {
               {p.modalidad === "prueba_gratuita" && <p className="border-t border-borde px-4 py-3 text-xs leading-5 text-tinta-suave sm:px-5">Te notificaremos por correo cuando tu prueba gratuita esté por finalizar.</p>}
             </section>
 
-            <details className={`${CARD} group`} aria-label="Contenido programado"
+            <details id={`contenido-${p.pedidoId}`} className={`${CARD} group`} aria-label="Contenido programado"
               onToggle={e => {
                 if (!e.currentTarget.open || p.modalidad !== "prueba_gratuita" ||
                     p.estadoServicio !== "sin_activar" || solicitudes[p.pedidoId] ||
@@ -1749,7 +1854,7 @@ function infoPersonal(datos, pedido) {
                   y admin no podía avanzar porque faltaba la autorización.
                   El servidor en /solicitud/confirmar sigue validando todo. */}
               {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (cuentasConectadas || solicitud?.motivos?.length > 0) && (
-                <div className="mt-4 space-y-2 border-t border-borde pt-3">
+                <div id={`autorizacion-${p.pedidoId}`} className="mt-4 space-y-2 border-t border-borde pt-3">
                   {solicitud?.motivos?.length > 0 && <p className="flex items-start gap-2 text-xs text-amber-700"><CloudUpload size={16} className="mt-0.5 shrink-0" /> <span>{solicitud.motivos.join(" · ")}</span></p>}
                   {!tieneSubidaPendiente(p) && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
@@ -1769,7 +1874,7 @@ function infoPersonal(datos, pedido) {
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
               {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (false) */}{archivosIncompletos && (
-                <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={undefined}
+                <details id={`archivos-${p.pedidoId}`} className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={undefined}
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
                     {"Completar archivos pendientes"}
@@ -1846,7 +1951,7 @@ function infoPersonal(datos, pedido) {
                     perfil={{...datos.perfil,...detallesPanel.perfil, nombreApellido:personal.nombre, emprendimiento:personal.emprendimiento, whatsapp:personal.whatsapp}}
                     email={datos.email} pedidoRenovacion={renovacionReal} inicioSemana={semanasPagadas[semanasPagadas.length - 1]?.fin || p.prueba?.fin || p.fin || null}
                     alFinalizar={() => {
-                      setConfigurandoSemana2(false);
+                      try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurandoSemana2(false);
                       setRenovacionReal(prev => prev && ({...prev,configuracionEstado:"en_revision"}));
                       setMensaje("La semana pagada fue enviada a revisión administrativa.");
                       cargarRenovacionReal(p.pedidoId).catch(() => {});
@@ -1862,13 +1967,14 @@ function infoPersonal(datos, pedido) {
               </section>
             )}
 
-            <details className={`${CARD} group p-4 sm:p-5`}>
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">Configurar otra semana <ChevronDown size={13} className="group-open:rotate-180"/></summary>
+            <details className={`${CARD} group p-4 sm:p-5 ${autorizacionLista ? "" : "opacity-60"}`}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden" onClick={e => { if (!autorizacionLista) { e.preventDefault(); setAvisoOtraSemana(v => ({ ...v, [p.pedidoId]: true })); } }}>Configurar otra semana <ChevronDown size={13} className="group-open:rotate-180"/></summary>
               <div className="mt-3 space-y-3 border-t border-borde pt-3">
                 <p className="text-xs text-tinta-apagado">Elegí en cuáles de tus redes vinculadas querés publicar</p>
+                {!autorizacionLista && <p role="status" className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Primero marcá el check de autorización y autorizá la programación de tu semana de prueba. Después de eso vas a poder configurar otra semana adicional.</p>}
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[{nombre:"Facebook",red:"facebook",precio:"$10.000 · USD 10"},{nombre:"Instagram",red:"instagram",precio:"$10.000 · USD 10"},{nombre:"Ambas",red:"ambas",precio:"$15.000 · USD 15",descuento:"25% de ahorro"}].map(op=><button type="button" key={op.red}
-                    disabled={op.red==="ambas" ? !(redes.includes("instagram")&&redes.includes("facebook")) : !redes.includes(op.red)}
+                    disabled={!autorizacionLista || (op.red==="ambas" ? !(redes.includes("instagram")&&redes.includes("facebook")) : !redes.includes(op.red))}
                     title={op.red==="ambas" ? "Necesitás tener ambas redes vinculadas" : "Red no incluida en el pedido inicial"}
                     onClick={()=>setPlanSemanal(v=>({...v,[p.pedidoId]:op.red}))}
                     className={`rounded-sm border p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${planSemanal[p.pedidoId]===op.red?"border-azul bg-azul-suave":"border-borde bg-crema"}`}>
@@ -1889,9 +1995,14 @@ function infoPersonal(datos, pedido) {
                 </div>}
               </div>
             </details>
+            {avisoOtraSemana[p.pedidoId] && !autorizacionLista && <p role="status" className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Primero marcá el check de autorización y autorizá la programación de tu semana de prueba. Después de eso vas a poder configurar otra semana adicional.</p>}
           </article>;
         })}
       </>}
     </div>
   </main>;
+}
+
+export default function PanelClientePublicacionesConError() {
+  return <ErrorBoundaryEditor><PanelClientePublicaciones /></ErrorBoundaryEditor>;
 }
