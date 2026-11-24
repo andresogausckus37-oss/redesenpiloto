@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ArchivosPedido, { subirArchivosSemana } from "./ArchivosPedido";
 import {
@@ -326,6 +326,20 @@ const medirProporcionArchivo = (archivo, esReel) => new Promise(resolve => {
     img.src = url;
   }
 });
+class ErrorBoundaryEditor extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return <div className="rounded-sm border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+        <p className="font-medium">No se pudo abrir el editor.</p>
+        <p className="mt-1 break-words">{String(this.state.error?.message || this.state.error)}</p>
+        <button type="button" className="mt-3 rounded-sm border border-borde bg-white px-2.5 py-1.5 text-xs font-medium text-tinta" onClick={() => { this.setState({ error: null }); this.props.onCerrar?.(); }}>Cerrar editor</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
 function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null, inicioSemana = null }) {
   const baseSemana = inicioSemana ? new Date(new Date(inicioSemana).getTime() + 86400000).getTime() : null;
   const modoRenovacion = Boolean(pedidoRenovacion?.id);
@@ -880,7 +894,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
-        {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}<div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${subida.porcentaje}%` }} /></div>
+        {subida && <p role="status" className="text-tinta-suave">{(subida?.archivo ?? "")} · {(subida?.porcentaje ?? 0)}%</p>}<div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${(subida?.porcentaje ?? 0)}%` }} /></div>
         {!enviando && <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || !redes.length}>
           {pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
         </button>}
@@ -1590,7 +1604,7 @@ function infoPersonal(datos, pedido) {
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} />}
+          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
