@@ -75,7 +75,10 @@ export function calcularCalendarioSimulado(pedido, ahora = new Date()) {
   const hoy = componentes(ahora, zona);
   const items = [];
   const advertencias = [];
-  const inicio = ahora.getTime();
+  const primerDelta = hoy.h >= 18 ? 2 : 1;
+const primerCivil = diaDesdeUTC(hoy.y, hoy.m, hoy.d, primerDelta);
+const inicioCivil = fechaLocalUTC(primerCivil.y, primerCivil.m, primerCivil.d, 0, 0, zona);
+const inicio = inicioCivil !== null ? inicioCivil : ahora.getTime();
   const fin = inicio + DIAS_REQUERIDOS * MS_DIA;
   for (const [indice, p] of pedido.publicaciones.entries()) {
     const hora = /^(\d{2}):(\d{2})$/.exec(p.horaLocalPreferida || "");
@@ -84,7 +87,7 @@ export function calcularCalendarioSimulado(pedido, ahora = new Date()) {
       continue;
     }
     let previsto = null;
-    for (let delta = 0; delta <= DIAS_REQUERIDOS; delta++) {
+    for (let delta = primerDelta; delta < primerDelta + DIAS_REQUERIDOS; delta++) {
       const civil = diaDesdeUTC(hoy.y, hoy.m, hoy.d, delta);
       if (civil.dia !== p.diaPreferido) continue;
       const instante = fechaLocalUTC(civil.y, civil.m, civil.d, +hora[1], +hora[2], zona);
@@ -115,7 +118,7 @@ export function calcularCalendarioSimulado(pedido, ahora = new Date()) {
   if (pedido.publicaciones.some(p => /(?:prueba interna|no publicar)/i.test(p.descripcion || ""))) {
     advertencias.push("Hay textos de prueba interna o 'No publicar'. No deben utilizarse para una activación real.");
   }
-  return { zonaHoraria: zona, ventanaInicioUTC: ahora.toISOString(),
+  return { zonaHoraria: zona, ventanaInicioUTC: new Date(inicio).toISOString(),
     ventanaFinUTC: new Date(fin).toISOString(), eventos: items, advertencias };
 }
 

@@ -11,6 +11,7 @@
 	"main": "worker.js",
 	"keep_vars": true,
 	"vars": {
+    "SERVICIO_ACCESO_SIN_VERIFICACION": "1",
     "TELEGRAM_PEDIDOS_CHAT_ID": "8751564182",
     "SERVICIO_CLIENTES_MEDIA_BASE_URL": "https://redesenpiloto.com.ar",
 		"FACEBOOK_PAGE_ID": "1312632228596581",

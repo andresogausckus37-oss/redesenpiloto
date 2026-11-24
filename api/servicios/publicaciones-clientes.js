@@ -137,7 +137,7 @@ export async function activarSemanaDesdeAdmin(db, env, pedidoId, revision) {
   if(!anterior){
     try {await cola.insertOne({_id:pedidoId,pedidoId,clienteUsuarioId:pedido.clienteUsuarioId,revision,
       estado:'preparando',publicacionHabilitada:false,creadoEn:ahora,
-      inicio:ahora,fin:new Date(ahora.getTime()+7*24*HORA),zonaHoraria:pedido.zonaHoraria,eventos});}
+      inicio:new Date(calendario.ventanaInicioUTC),fin:new Date(calendario.ventanaFinUTC),zonaHoraria:pedido.zonaHoraria,eventos});}
     catch(e){if(e?.code===11000)return {ok:false,error:'La semana está siendo activada desde otra sesión. Recargá.',status:409};throw e;}
   }
   const programacion=anterior||await cola.findOne({_id:pedidoId});

@@ -1598,6 +1598,7 @@ function infoPersonal(datos, pedido) {
           const semanasPagadas = detallesPanel.semanasPagadas?.[p.pedidoId] || [];
           const ig = detalle?.cuentas?.instagram || instagramPorPedido[p.pedidoId];
           const facebook = detalle?.cuentas?.facebook !== undefined ? detalle.cuentas.facebook : p.facebook;
+          const cuentasConectadas = redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig));
           const contenidosVistos = detalle?.contenidos?.length ? contenidos.map(c=>({...c,...(detalle.contenidos.find(v=>v.id===c.id)||{})})) : contenidos;
           const solicitud = solicitudes[p.pedidoId];
           const pruebaActiva = tieneEstadoActivo(p);
@@ -1733,7 +1734,7 @@ function infoPersonal(datos, pedido) {
                   Antes el cliente no podía autorizar porque admin no había marcado revisado,
                   y admin no podía avanzar porque faltaba la autorización.
                   El servidor en /solicitud/confirmar sigue validando todo. */}
-              {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
+              {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (cuentasConectadas || solicitud?.motivos?.length > 0) && (
                 <div className="mt-4 space-y-2 border-t border-borde pt-3">
                   {solicitud?.motivos?.length > 0 && <p className="flex items-start gap-2 text-xs text-amber-700"><CloudUpload size={16} className="mt-0.5 shrink-0" /> <span>{solicitud.motivos.join(" · ")}</span></p>}
                   {!tieneSubidaPendiente(p) && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">

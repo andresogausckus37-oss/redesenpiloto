@@ -4,6 +4,7 @@ import { HelmetProvider } from "react-helmet-async";
 import LandingPublicaciones from "./paginas/servicios/LandingPublicaciones";
 import PanelClientePublicaciones from "./paginas/servicios/PanelClientePublicaciones";
 import LoginAdmin from "./paginas/LoginAdmin";
+import AdminPanel from "./paginas/AdminPanel";
 import NavbarServicio from "./componentes/NavbarServicio";
 import FooterServicio from "./componentes/FooterServicio";
 import Privacidad from "./paginas/legal/Privacidad";
@@ -45,6 +46,7 @@ const ContenidoApp = () => {
           <Route path="/privacidad" element={<Privacidad />} />
           <Route path="/terminos" element={<Terminos />} />
           <Route path="/admin/login" element={<LoginAdmin />} />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="/servicios/publicacion-automatica" element={<RedireccionViejaLanding />} />
           <Route path="/servicios/publicacion-automatica/mi-panel" element={<RedireccionViejaPanel />} />
           <Route path="/servicios/publicacion-automatica/configurar" element={<RedireccionPanelAnterior />} />

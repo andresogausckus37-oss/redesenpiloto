@@ -290,7 +290,7 @@ export default function ArchivosPedido({ pedido }) {
           }
           let exitoFinalizar = false;
           for (let intentoFin = 0; intentoFin < 3 && !exitoFinalizar; intentoFin++) {
-            try { await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId }); exitoFinalizar = true; }
+            try { await post("finalizar",{ pedidoId:id,cargaId:sesion.cargaId }); exitoFinalizar = true; try { localStorage.setItem("destacar-cuentas", "1"); } catch {} }
             catch (eFin) {
               if (intentoFin === 2) { falloEnFinalizar = true; throw eFin; }
               setAccion(`Reintentando automáticamente ${archivo.name} (${intentoFin + 2}/3)...`);
@@ -305,7 +305,14 @@ export default function ArchivosPedido({ pedido }) {
         setProgresoPorArchivo(v => { const c = { ...v }; delete c[`${contenido.id}:${posicion}`]; return c; });
       }
       setAviso("");
-      recargar(); setErrorPorContenido(prev => ({ ...prev, [contenido.id]: null }));
+      recargar();
+          try {
+            const req = contenido.tipo === "carrusel" ? 2 : 1;
+            const propios = (datos?.archivos || []).filter(a => a.contenidoId === contenido.id).length;
+            const falt = (datos?.publicaciones || []).filter(c => (datos?.archivos || []).filter(a => a.contenidoId === c.id).length < (c.tipo === "carrusel" ? 2 : 1));
+            if (falt.length === 1 && falt[0].id === contenido.id && propios + 1 >= req) setTimeout(() => window.location.reload(), 900);
+          } catch {}
+          setErrorPorContenido(prev => ({ ...prev, [contenido.id]: null }));
     } catch(e) { setErrorPorContenido(prev => ({ ...prev, [contenido.id]: e.message || "No se pudo subir el archivo." })); }
     finally { setProgreso(0);setAccion("");setProcesando(false); detenerTemporizador(); }
   }
@@ -334,7 +341,7 @@ export default function ArchivosPedido({ pedido }) {
                   <span className={`text-[11px] font-medium ${completo ? "text-emerald-700" : "text-tinta-apagado"}`}>{propios.length}/{limite} archivos</span>
                 {contenido.tipo === "reel" && <p className="mt-2 text-[11px] leading-4 text-tinta-suave"><span className="block">Max. 100 MB</span><span className="block">Max. 90 seg</span><span className="block">Min. 720x1280</span><span className="block">Max. 1080x1920</span><span className="block">(recomendado)</span></p>}
                 </div>
-                {!!contenido.descripcion && <p className="mt-2 line-clamp-2 text-xs text-tinta-suave">{contenido.descripcion}</p>}
+                {!!contenido.descripcion && <p className="mt-2 line-clamp-2 overflow-hidden text-xs text-tinta-suave" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }} title={contenido.descripcion}>{contenido.descripcion}</p>}
                 {propios.map(a => <div key={a.posicion} className="mt-2 rounded-sm bg-white p-2 text-xs">
                   <div className="flex items-center gap-2">
                     {a.revision === "rechazado" ? <XCircle size={15} className="shrink-0 text-red-600" /> : <CheckCircle2 size={15} className={a.revision === "aprobado" ? "shrink-0 text-emerald-600" : "shrink-0 text-terracota"}/>}

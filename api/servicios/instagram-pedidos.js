@@ -394,7 +394,7 @@ async function callback(request, env, url) {
         $setOnInsert: { conectadoEn: ahora },
       }, { upsert: true });
     });
-    return vista("Instagram conectado al pedido", `La cuenta @${elegida.usuario} quedó vinculada al pedido. Redes en Piloto podrá programar y publicar de forma automática en tu cuenta, los contenidos que hayas brindado.`);
+    return vista("Instagram conectado al pedido", `La cuenta @${elegida.usuario} quedó vinculada al pedido. Redes en Piloto podrá programar y publicar automaticamente en tu cuenta tu contenido programado.`);
   } catch (error) {
     // Diagnóstico seguro: sin URL completa, code OAuth, correos, access tokens ni
     // mensajes de Meta (pueden contener información sensible).

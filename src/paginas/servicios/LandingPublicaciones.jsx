@@ -12,6 +12,8 @@ const RUTA_BASE = "/publicacion-automatica";
 const RUTA_PANEL = `${RUTA_BASE}/mi-panel`;
 const API_SOLICITAR_CODIGO = "/api/servicios/clientes/acceso/solicitar";
 const API_VERIFICAR_CODIGO = "/api/servicios/clientes/acceso/verificar";
+// MODO PRUEBA: true = sin Turnstile ni codigo de 6 digitos. Para reactivar, poner false.
+const ACCESO_SIN_VERIFICACION = true;
 
 function cargarMontserrat() {
   const id = "comunidad-semanal-fuente-montserrat";
@@ -39,6 +41,7 @@ const PAISES_REGISTRO = [
 
 // === TURNSTILE MANUAL CHECK ===
 function VerificacionManual({ sitekey, onToken, revision, habilitado }) {
+  if (ACCESO_SIN_VERIFICACION) return null;
   const ref = useRef(null);
   const widgetId = useRef(null);
   const [error, setError] = useState("");
@@ -332,7 +335,23 @@ export default function LandingPublicaciones() {
           !PAISES_REGISTRO.includes(paisRegistro) || webRegistro.trim().length > 300) {
         setErrorRegistro("Completa tu nombre, emprendimiento, WhatsApp y país correctamente."); return;
       }
-      if (!turnstileToken) { setErrorRegistro("Marca el check de verificación y completá el desafío de seguridad."); return; }
+      if (!ACCESO_SIN_VERIFICACION && !turnstileToken) { setErrorRegistro("Marca el check de verificación y completá el desafío de seguridad."); return; }
+    }
+    if (ACCESO_SIN_VERIFICACION && modoAcceso === "registro") {
+      setEsperandoRegistro(true); setErrorRegistro("");
+      try {
+        const respuesta = await fetch(API_VERIFICAR_CODIGO, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          credentials: "same-origin", cache: "no-store",
+          body: JSON.stringify({ email: correo, codigo: "000000", modo: modoAcceso, perfil: perfilRegistro(), sinVerificacion: true }),
+        });
+        const datos = await respuesta.json().catch(() => ({}));
+        if (!respuesta.ok || datos.ok !== true) throw new Error(datos.error || "No se pudo crear la cuenta.");
+        setModalRegistro(false); navigate(RUTA_PANEL); return;
+      } catch (error) {
+        setErrorRegistro(error.message || "No se pudo crear la cuenta.");
+      } finally { setEsperandoRegistro(false); }
+      return;
     }
     setEsperandoRegistro(true); setErrorRegistro("");
     try {
@@ -736,8 +755,8 @@ export default function LandingPublicaciones() {
                 </div>
               </>}
               {errorRegistro && <p role="alert" className="rounded-sm bg-red-50 px-3 py-2 text-xs text-red-700">{errorRegistro}</p>}
-              <button type="submit" disabled={esperandoRegistro || (modoAcceso === "registro" && !turnstileToken)} className={`${BOTON} w-full bg-azul text-white shadow-boton-azul hover:bg-azul-hover`}>
-                {esperandoRegistro ? "Enviando código..." : modoAcceso === "registro" ? "Crear cuenta y probar gratis" : "Enviar código de acceso"}
+              <button type="submit" disabled={esperandoRegistro || (modoAcceso === "registro" && !ACCESO_SIN_VERIFICACION && !turnstileToken)} className={`${BOTON} w-full bg-azul text-white shadow-boton-azul hover:bg-azul-hover`}>
+                {esperandoRegistro ? "Creando cuenta..." : modoAcceso === "registro" ? (ACCESO_SIN_VERIFICACION ? "Crear cuenta y entrar al panel" : "Crear cuenta y probar gratis") : "Enviar código de acceso"}
               </button>
               <button type="button" className="w-full text-xs font-medium text-tinta-suave underline underline-offset-2" onClick={() => { setErrorRegistro(""); setModoAcceso(v => v === "registro" ? "ingreso" : "registro"); setTurnstileToken(""); }}>
                 {modoAcceso === "registro" ? "Ya tengo cuenta · Iniciar sesión" : "Crear una cuenta nueva"}

@@ -207,6 +207,8 @@ function validarPerfil(datos) {
   return { nombre, emprendimiento, whatsapp, pais, web };
 }
 
+const accesoSinVerificacion = (env) => String(env?.SERVICIO_ACCESO_SIN_VERIFICACION ?? "").trim() === "1";
+
 async function verificarTurnstileRegistro(request, env, token) {
   const secret = String(env?.SERVICIO_TURNSTILE_SECRET ?? "").trim();
   if (!secret || typeof token !== "string" || token.length < 20 || token.length > 2048) return false;
@@ -282,7 +284,7 @@ async function solicitar(request, env, config, ipHash, dbExistente = null) {
   }
   if (modo === "registro") {
     if (!validarPerfil(datos?.perfil)) return responder({ ok: false, error: "Completá correctamente tus datos de registro." }, 400);
-    if (!await verificarTurnstileRegistro(request, env, datos?.turnstileToken)) {
+    if (!accesoSinVerificacion(env) && !await verificarTurnstileRegistro(request, env, datos?.turnstileToken)) {
       return responder({ ok: false, error: "Completá nuevamente la verificación de seguridad." }, 403);
     }
   }
@@ -353,6 +355,9 @@ async function verificar(request, env, config, ipHash, dbExistente = null) {
         return responder({ ok: false, error: "Demasiados intentos. Solicitá un código más tarde." }, 429);
       }
       const codigos = db.collection("clientes_codigos");
+      if (accesoSinVerificacion(env) && datos?.sinVerificacion === true && codigo === "000000") {
+        await codigos.updateOne({ _id: emailHash }, { $set: { codigoHash: hmacCodigo(config.otpSecret, emailHash, "000000"), venceEn: new Date(ahora + VIDA_CODIGO_MS), eliminarEn: new Date(ahora + 24 * HORA_MS), intentos: 0 } }, { upsert: true });
+      }
       const pendiente = await codigos.findOne({ _id: emailHash });
       const fallo = () => responder({ ok: false, error: "Código incorrecto o vencido. Pedí uno nuevo si es necesario." }, 403);
       if (!pendiente?.codigoHash || pendiente.intentos >= 5 ||

@@ -290,7 +290,7 @@ async function callback(request, env, url) {
         $setOnInsert: { conectadoEn: fecha },
       }, { upsert: true });
     });
-    return pagina("Facebook conectado al pedido", `<p>La página <strong>${escapar(seleccionada.name || "Facebook")}</strong> quedó vinculada exclusivamente a este pedido.</p><p>Redes en Piloto podrá programar y publicar de forma automática en tu cuenta, los contenidos que hayas brindado.</p><p>ID de página: <code>${escapar(seleccionada.id)}</code></p>`);
+    return pagina("Facebook conectado al pedido", `<p>La página <strong>${escapar(seleccionada.name || "Facebook")}</strong> quedó vinculada exclusivamente a este pedido.</p><p>Redes en Piloto podrá programar y publicar automaticamente en tu cuenta tu contenido programado.</p><p>ID de página: <code>${escapar(seleccionada.id)}</code></p>`);
   } catch (e) {
     // Nunca registrar ni devolver tokens, códigos OAuth, secretos ni respuestas completas de Meta.
     if (e?.mensajeUsuario) {

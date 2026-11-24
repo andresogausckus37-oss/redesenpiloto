@@ -319,7 +319,7 @@ export default function ArchivosPedido({ pedido }) {
   }
 
   return (
-    <section className={CAJA} aria-label="Archivos definitivos de publicaciones">
+    <>
                   {cargando ? <p className="mt-3 text-xs text-tinta-suave">Consultando el estado de los contenidos...</p> : datos && (
         <>
           {!datos.habilitada && <div className="mt-3 flex gap-2 rounded-sm bg-crema p-3 text-xs leading-5 text-tinta-suave"><ShieldCheck className="shrink-0" size={17} /> La carga está disponible durante la preparación de la prueba o después de confirmar el pago. Se cierra cuando el material queda aprobado.</div>}
@@ -378,6 +378,6 @@ export default function ArchivosPedido({ pedido }) {
       
       {aviso && <p className="mt-3 text-xs text-emerald-700" role="status">{aviso}</p>}
       <button type="button" disabled={procesando} onClick={recargar} className="mt-3 inline-flex items-center gap-2 rounded-sm border border-borde bg-white px-3 py-2 text-xs font-medium text-tinta-suave disabled:opacity-50"><RefreshCw size={14}/> Actualizar contenidos</button>
-    </section>
+    </>
   );
 }

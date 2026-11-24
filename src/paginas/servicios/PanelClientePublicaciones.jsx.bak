@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ArchivosPedido, { subirArchivosSemana } from "./ArchivosPedido";
 import {
@@ -326,6 +326,22 @@ const medirProporcionArchivo = (archivo, esReel) => new Promise(resolve => {
     img.src = url;
   }
 });
+class ErrorBoundaryEditor extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error) { try { console.error("[EditorPrimeraSemana]", error); } catch {} }
+  render() {
+    if (this.state.error) {
+      return <div role="alert" className="rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+        <p className="font-medium">No se pudo abrir el editor de la primera semana.</p>
+        <p className="mt-1">Error: {String(this.state.error?.message || this.state.error)}</p>
+        <p className="mt-1">Cerrá y volvé a intentar. Si sigue, copiá este mensaje.</p>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
 function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null, inicioSemana = null }) {
   const baseSemana = inicioSemana ? new Date(new Date(inicioSemana).getTime() + 86400000).getTime() : null;
   const modoRenovacion = Boolean(pedidoRenovacion?.id);
@@ -880,7 +896,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
         {!consultando && !habilitada && <p className="text-tinta-suave">La programación gratuita todavía no está habilitada en el servidor.</p>}
         {!datosCompletos && <p className="text-amber-700">Revisá tus datos personales y el nombre del emprendimiento en el registro.</p>}
-        {subida && <p role="status" className="text-tinta-suave">{subida.archivo} · {subida.porcentaje}%</p>}<div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${subida.porcentaje}%` }} /></div>
+        {subida && <p role="status" className="text-tinta-suave">{subida?.archivo} · {(subida?.porcentaje ?? 0)}%</p>}<div className="mt-1 h-2 overflow-hidden rounded-sm bg-borde"><div className="h-full rounded-sm bg-terracota transition-all" style={{ width: `${(subida?.porcentaje ?? 0)}%` }} /></div>
         {!enviando && <button type="submit" className={BTN_PRIMARIO} disabled={consultando || !habilitada || !datosCompletos || !redes.length}>
           {pedidoCreado ? "Reintentar subida de archivos" : modoRenovacion ? "Enviar semana pagada para revisión" : "Programar semana gratuita"}
         </button>}
@@ -1183,10 +1199,12 @@ export default function PanelClientePublicaciones() {
   const [planSemanal, setPlanSemanal] = useState({});
   const [medioSemanal, setMedioSemanal] = useState({});
   const [archivosAbiertos, setArchivosAbiertos] = useState({});
+  const [bannerArchivosCerrado, setBannerArchivosCerrado] = useState(() => { try { return JSON.parse(localStorage.getItem("banner-archivos-cerrado") || "[]"); } catch { return []; } });
   const [renovacionReal, setRenovacionReal] = useState(null);
 
 
   const cargarPanel = useCallback(async () => {
+
     setCargando(true);
     setError("");
     try {
@@ -1271,6 +1289,51 @@ export default function PanelClientePublicaciones() {
     } finally { setCargando(false); }
   }, []);
   useEffect(() => { cargarPanel(); }, [cargarPanel]);
+
+  // Al volver de conectar cuentas, bajar hasta el bloque de autorizacion (solo 1 vez).
+  // Con reintento: espera a que cargarPanel termine y el bloque exista en el DOM.
+  // Solo corre si hay marca en localStorage, por eso la entrada normal no hace scroll.
+  useEffect(() => {
+    try {
+      const tieneMarca = () => {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith("volviendo-de-conectar-")) return true;
+        }
+        return false;
+      };
+      if (!tieneMarca()) return;
+      let intentos = 0;
+      const timer = setInterval(() => {
+        intentos++;
+        const el = document.querySelector('[id^="autorizar-"]') || document.querySelector('[id^="contenido-programado-"]');
+        if (el) {
+          clearInterval(timer);
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith("volviendo-de-conectar-")) localStorage.removeItem(k);
+          }
+          let cur = el.parentElement;
+          while (cur) { if (cur.tagName === "DETAILS") cur.setAttribute("open", ""); cur = cur.parentElement; }
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        try {
+          el.style.transition = "box-shadow 0.4s ease";
+          el.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.55), 0 8px 24px rgba(37, 99, 235, 0.25)";
+          setTimeout(() => { try { el.style.boxShadow = ""; } catch {} }, 5000);
+          try { el.animate([{ boxShadow: "0 0 0 0 rgba(37, 99, 235, 0.0)" }, { boxShadow: "0 0 0 6px rgba(37, 99, 235, 0.25)" }, { boxShadow: "0 0 0 3px rgba(37, 99, 235, 0.55)" }], { duration: 1000, iterations: 5 }); } catch {}
+        } catch {}
+        } else if (intentos >= 17) {
+          // ~5 segundos sin que aparezca el bloque: no insistir, borrar marca para no reintentar en la proxima entrada.
+          clearInterval(timer);
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith("volviendo-de-conectar-")) localStorage.removeItem(k);
+          }
+        }
+      }, 300);
+      return () => clearInterval(timer);
+    } catch {}
+  }, [cargando]);
   const cargarRenovacionReal = useCallback(async pedidoId => {
     const r = await fetch(`/api/servicios/publicaciones/renovacion-transferencia?pedidoId=${encodeURIComponent(pedidoId)}`,
       {credentials:"same-origin",cache:"no-store"});
@@ -1377,6 +1440,7 @@ const tieneSubidaPendiente = (p) => {
     return false;
   };
 const conectarFacebook = async pedidoId => {
+    try { localStorage.setItem(`volviendo-de-conectar-${pedidoId}`, "1"); } catch {}
     setAccionFacebook(pedidoId); setError("");
     try {
       const respuesta = await fetch("/api/servicios/meta/pedidos/iniciar", {
@@ -1388,6 +1452,7 @@ const conectarFacebook = async pedidoId => {
       if (!respuesta.ok || !info.ok || !info.authorizationUrl) throw new Error(info.error || "No se pudo iniciar Facebook.");
       const url = new URL(info.authorizationUrl);
       if (url.protocol !== "https:" || url.hostname !== "www.facebook.com") throw new Error("La autorización no es válida.");
+      try { localStorage.setItem(`volviendo-de-conectar-${pedidoId}`, "1"); } catch {}
       window.location.assign(url.toString());
     } catch (e) { setError(e.message || "No se pudo conectar Facebook."); setAccionFacebook(""); }
   };
@@ -1407,6 +1472,7 @@ const conectarFacebook = async pedidoId => {
     finally {setAccionFacebook("");}
   };
   const conectarInstagram = async pedidoId => {
+    try { localStorage.setItem(`volviendo-de-conectar-${pedidoId}`, "1"); } catch {}
     setAccionInstagram(pedidoId); setError("");
     try {
       const respuesta = await fetch(`${API_INSTAGRAM}/iniciar`, {
@@ -1418,6 +1484,7 @@ const conectarFacebook = async pedidoId => {
       if (!respuesta.ok || !info.ok || !info.authorizationUrl) throw new Error(info.error || "No se pudo iniciar Instagram.");
       const url = new URL(info.authorizationUrl);
       if (url.protocol !== "https:" || url.hostname !== "www.facebook.com") throw new Error("La autorización no es válida.");
+      try { localStorage.setItem(`volviendo-de-conectar-${pedidoId}`, "1"); } catch {}
       window.location.assign(url.toString());
     } catch (e) { setError(e.message || "No se pudo conectar Instagram."); setAccionInstagram(""); }
   };
@@ -1534,7 +1601,22 @@ function infoPersonal(datos, pedido) {
     <div className="mx-auto max-w-5xl space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
+{(() => { const pPend = pedidos.find(pp => ["pendiente_carga", "en_preparacion"].includes(pp.estadoContenidos) && !bannerArchivosCerrado.includes(pp.pedidoId)); if (!pPend) return null; return (
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-sm border border-amber-300 bg-amber-100 px-3 py-2.5">
+                <p className="flex items-start gap-2 text-xs font-medium text-amber-900"><CloudUpload size={16} className="mt-0.5 shrink-0" /><span>Te quedaron archivos por subir. Podés continuar donde quedaste.</span></p>
+                <div className="flex items-center gap-2">
+                  <button type="button" className={BTN_PRIMARIO}
+                    onClick={() => { setArchivosAbiertos(v => ({ ...v, [pPend.pedidoId]: true })); setTimeout(() => { const el = document.getElementById(`archivos-${pPend.pedidoId}`); const padres = []; let cur = el?.parentElement; while (cur) { if (cur.tagName === "DETAILS") padres.push(cur); cur = cur.parentElement; } padres.forEach(d => d.setAttribute("open", "")); setTimeout(() => el?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }, 100); }}>
+                    Continuar subiendo archivos
+                  </button>
+                  <button type="button" aria-label="Cerrar aviso" className="rounded-sm px-2 py-1 text-sm font-medium text-amber-900 hover:bg-amber-200"
+                    onClick={() => { const nuevos = [...bannerArchivosCerrado, pPend.pedidoId]; setBannerArchivosCerrado(nuevos); try { localStorage.setItem("banner-archivos-cerrado", JSON.stringify(nuevos)); } catch {} }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ); })()}
+                      <h1 className="text-xl font-medium text-tinta sm:text-2xl">Bienvenido a tu panel privado</h1>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-tinta">Aca podes revisar tu email registrado, las cuentas conectadas, tu plan actual, el contenido detallado y programado, y configurar una nueva semana.</p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -1545,7 +1627,7 @@ function infoPersonal(datos, pedido) {
 
       {cargando && <div className={`${CARD} p-5 text-xs text-tinta-apagado`}>Cargando tu panel...</div>}
       {error && <div role="alert" className="rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">{error}</div>}
-      {mensaje && <div role="status" className="rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">{mensaje}</div>}
+      {mensaje && <div role="status" className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{mensaje}</div>}
       {!cargando && !error && (!datos || !datos.autenticado) && <section className={`${CARD} p-5`}>
         <h2 className="text-sm font-medium">Accedé a tu cuenta</h2>
         <p className="mt-1 text-xs leading-5 text-tinta-apagado">Para ingresar a tu panel, solicitá un nuevo código de seis dígitos desde Iniciar sesión.</p>
@@ -1590,7 +1672,7 @@ function infoPersonal(datos, pedido) {
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} />}
+          {configurando && <ErrorBoundaryEditor><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación."); setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 350);}} /></ErrorBoundaryEditor>}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
@@ -1598,6 +1680,7 @@ function infoPersonal(datos, pedido) {
           const semanasPagadas = detallesPanel.semanasPagadas?.[p.pedidoId] || [];
           const ig = detalle?.cuentas?.instagram || instagramPorPedido[p.pedidoId];
           const facebook = detalle?.cuentas?.facebook !== undefined ? detalle.cuentas.facebook : p.facebook;
+          const cuentasConectadas = redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig));
           const contenidosVistos = detalle?.contenidos?.length ? contenidos.map(c=>({...c,...(detalle.contenidos.find(v=>v.id===c.id)||{})})) : contenidos;
           const solicitud = solicitudes[p.pedidoId];
           const pruebaActiva = tieneEstadoActivo(p);
@@ -1619,7 +1702,7 @@ function infoPersonal(datos, pedido) {
           const hayCorreccion = archivosPorCorregir || Boolean(solicitud?.motivos?.some(m => String(m).toLowerCase().includes("correcci")));
           const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
           return <article key={p.pedidoId} className="space-y-5">
-            <details className={`${CARD} group`} aria-label="Cuentas">
+                        <details className={`${CARD} group`} aria-label="Cuentas">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><Globe size={16} className="text-azul"/><span className="text-sm font-medium">Cuentas</span></span><ChevronDown size={13} className="transition group-open:rotate-180"/></summary>
               <div className="space-y-3 border-t border-borde p-4 sm:p-5">
               <p className="text-xs leading-5 text-tinta-apagado">{redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig)) ? "Tus cuentas están conectadas. Ahora podemos publicar automáticamente tu contenido programado." : "Conectá las cuentas seleccionadas después de preparar tu primera semana."}</p>
@@ -1683,7 +1766,7 @@ function infoPersonal(datos, pedido) {
               {p.modalidad === "prueba_gratuita" && <p className="border-t border-borde px-4 py-3 text-xs leading-5 text-tinta-suave sm:px-5">Te notificaremos por correo cuando tu prueba gratuita esté por finalizar.</p>}
             </section>
 
-            <details className={`${CARD} group`} aria-label="Contenido programado"
+            <details id={`contenido-programado-${p.pedidoId}`} className={`${CARD} group scroll-mt-20`} aria-label="Contenido programado"
               onToggle={e => {
                 if (!e.currentTarget.open || p.modalidad !== "prueba_gratuita" ||
                     p.estadoServicio !== "sin_activar" || solicitudes[p.pedidoId] ||
@@ -1734,17 +1817,16 @@ function infoPersonal(datos, pedido) {
                   y admin no podía avanzar porque faltaba la autorización.
                   El servidor en /solicitud/confirmar sigue validando todo. */}
               {p.modalidad === "prueba_gratuita" && !tieneEstadoActivo(p) && p.estadoServicio !== "activado" && (!solicitud?.vigente || solicitud?.requiereNuevaConfirmacion || !solicitud) && (
-                <div className="mt-4 space-y-2 border-t border-borde pt-3">
+                <div id={`autorizar-${p.pedidoId}`} className="mt-4 space-y-3 scroll-mt-28 rounded-sm border border-azul bg-azul-super-claro p-3 shadow-fintech">
                   {solicitud?.motivos?.length > 0 && <p className="flex items-start gap-2 text-xs text-amber-700"><CloudUpload size={16} className="mt-0.5 shrink-0" /> <span>{solicitud.motivos.join(" · ")}</span></p>}
-                  {!tieneSubidaPendiente(p) && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
+                  {!tieneSubidaPendiente(p) && cuentasConectadas && (<label className="flex items-start gap-2 text-xs leading-5 text-tinta-suave">
                     <input type="checkbox" className="mt-1 accent-azul"
                       checked={Boolean(confirmacionesSolicitud[p.pedidoId])}
                       onChange={e => setConfirmacionesSolicitud(v => ({ ...v, [p.pedidoId]: e.target.checked }))}/>
                     <span>Autorizo la programación y publicación de contenido en las cuentas seleccionadas</span>
                   </label>)}
-                  <button type="button" className={BTN_PRIMARIO}
-                    disabled={!solicitud?.revision || !confirmacionesSolicitud[p.pedidoId] || Boolean(gestionandoSolicitud)}
-                    onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>
+                  {!tieneSubidaPendiente(p) && cuentasConectadas && solicitud?.revision && confirmacionesSolicitud[p.pedidoId] && !gestionandoSolicitud && (<button type="button" className={BTN_PRIMARIO}
+                    onClick={() => registrarSolicitud(p.pedidoId)}>Autorizar publicación <Send size={13}/></button>)}
                 </div>
               )}
               {p.modalidad === "prueba_gratuita" && solicitud?.vigente && p.estadoServicio === "sin_activar" && (
@@ -1754,8 +1836,8 @@ function infoPersonal(datos, pedido) {
                 </div>
               )}
               {erroresSolicitud[p.pedidoId] && <p role="alert" className="mt-2 text-xs text-red-700">{erroresSolicitud[p.pedidoId]}</p>}
-              {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (false) */}{archivosIncompletos && (
-                <details className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={undefined}
+              {/* TEMP DESHABILITADO CORRECCION ADMIN: se valida en panel. Para reactivar, volver a (false) */}              {archivosIncompletos && (
+                <details id={`archivos-${p.pedidoId}`} className="mt-4 rounded-sm border border-amber-200 bg-amber-50/50 p-3" open={archivosAbiertos[p.pedidoId] ?? archivosIncompletos}
                   onToggle={e => { const abierto = e.currentTarget.open; setArchivosAbiertos(v => ({ ...v, [p.pedidoId]: abierto })); }}>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-amber-900 [&::-webkit-details-marker]:hidden">
                     {"Completar archivos pendientes"}
@@ -1834,7 +1916,7 @@ function infoPersonal(datos, pedido) {
                     alFinalizar={() => {
                       setConfigurandoSemana2(false);
                       setRenovacionReal(prev => prev && ({...prev,configuracionEstado:"en_revision"}));
-                      setMensaje("La semana pagada fue enviada a revisión administrativa.");
+                      setMensaje("La semana pagada fue enviada a revisión administrativa."); setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 350);
                       cargarRenovacionReal(p.pedidoId).catch(() => {});
                     }}/>
                 }

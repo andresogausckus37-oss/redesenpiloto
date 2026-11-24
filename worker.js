@@ -6,6 +6,7 @@ import { ejecutarConexionMetaPedido } from "./api/servicios/meta-pedidos.js";
 import { ejecutarSimulacionCalendario, ejecutarPreparacionCalendario, ejecutarEnsayoCalendario, ejecutarReservaCalendario } from "./api/servicios/calendario-simulacion.js";
 import { ejecutarSolicitudProgramacion } from "./api/servicios/solicitud-programacion.js";
 import { ejecutarAdminProgramacion } from "./api/servicios/admin-programacion.js";
+import { ejecutarAdminResetPruebas } from "./api/servicios/admin-reset-pruebas.js";
 import { ejecutarCronClientes, servirMedioCliente } from "./api/servicios/publicaciones-clientes.js";
 import { ejecutarActivacionSimulada } from "./api/servicios/activacion-simulada.js";
 import { ejecutarPublicacionPiloto, ejecutarImagenPiloto } from "./api/servicios/publicacion-piloto-meta.js";
@@ -1148,7 +1149,10 @@ if (url.pathname.startsWith("/api/servicios/publicaciones/archivos/")) {
   }
   return ejecutarArchivosPedido(request, env);
 }
-if (url.pathname === "/api/admin/servicios/publicaciones/programacion") {
+if (url.pathname === "/api/admin/servicios/publicaciones/reset-pruebas") {
+    return ejecutarAdminResetPruebas(request, env, adminAutorizadoWorker(request, env));
+  }
+  if (url.pathname === "/api/admin/servicios/publicaciones/programacion") {
   return ejecutarAdminProgramacion(request, env, adminAutorizadoWorker(request, env));
 }
 
