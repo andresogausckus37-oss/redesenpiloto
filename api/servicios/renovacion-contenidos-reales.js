@@ -21,7 +21,8 @@ const DB='andres_imprimibles';
 const TABLA='renovaciones_transferencia_reales';
 const MEDIOS='medios_renovaciones_reales';
 const ID=/^renovacion-real:SER-[a-f0-9-]{36}(?::(?:[3-9]|[1-9][0-9]{1,2}))?$/i;
-const MAX=25*1024*1024;
+const MAX_VIDEO=100*1024*1024;
+const MAX_IMAGEN=20*1024*1024;
 const json=(v,s=200)=>Response.json(v,{status:s,headers:{'Cache-Control':'no-store'}});
 const origen=req=>req.headers.get('origin')===new URL(req.url).origin;
 async function conDB(env,fn){const {MongoClient}=await import('mongodb');const c=new MongoClient(env.MONGODB_URI);try{await c.connect();return await fn(c.db(DB));}finally{await c.close().catch(()=>{});}}
@@ -38,7 +39,7 @@ function configValida(data,doc){
     const archivos=[];
     for(const a of x.archivosSeleccionados){
       const permitidos=x.tipo==='reel'?['video/mp4']:['image/jpeg','image/png','image/webp'];
-      if(!a||typeof a.nombre!=='string'||a.nombre.length>150||!permitidos.includes(a.tipo)||!Number.isSafeInteger(a.tamano)||a.tamano<100||a.tamano>MAX)return null;
+      if(!a||typeof a.nombre!=='string'||a.nombre.length>150||!permitidos.includes(a.tipo)||!Number.isSafeInteger(a.tamano)||a.tamano<100||a.tamano>(x.tipo==='reel'?MAX_VIDEO:MAX_IMAGEN))return null;
       // La revisión administrativa generará una copia JPEG si Instagram requiere convertir PNG/WebP.
       // No se acepta un original PNG/WebP superior al límite de entrada de Cloudflare Images (20 MiB).
       if(doc.redes.includes('instagram')&&x.tipo!=='reel'&&a.tipo!=='image/jpeg'&&a.tamano>20*1024*1024)return null;
@@ -67,7 +68,7 @@ export async function ejecutarContenidosRenovacionReal(req,env){
     if(!doc)return json({ok:false,error:'La semana todavía no fue activada por Administración.'},409);
     if(ruta===BASE+'/configurar'){
       if(![null,undefined,'sin_configurar','en_preparacion'].includes(doc.configuracionEstado))return json({ok:false,error:'Los contenidos ya fueron enviados a revisión.'},409);
-      const config=configValida(info,doc);if(!config)return json({ok:false,error:'Revisá los cuatro contenidos, horarios y archivos (hasta 25 MB cada uno).'},400);
+      const config=configValida(info,doc);if(!config)return json({ok:false,error:'Revisá los cuatro contenidos, horarios y archivos (videos hasta 100 MB, imágenes hasta 20 MB).'},400);
       const existentes=await medios.countDocuments({renovacionId:id});
       if(existentes&&JSON.stringify(config)!==JSON.stringify(doc.configuracion))return json({ok:false,error:'Ya existen archivos cargados: conservá la configuración original del pedido.'},409);
       await tabla.updateOne({_id:id,clienteUsuarioId:usuario.id,estado:'activada',configuracionEstado:{$nin:['en_revision','aprobada']}},{$set:{configuracion:config,configuracionEstado:'en_preparacion',actualizadoEn:new Date()}});
@@ -83,8 +84,8 @@ export async function ejecutarContenidosRenovacionReal(req,env){
       const previo=await medios.findOne({_id:clave,renovacionId:id});
       if(previo?.r2Key&&previo.nombre===esperado.nombre&&previo.tipo===esperado.tipo&&previo.tamano===esperado.tamano)return json({ok:true,contenido,pos,reutilizado:true});
       if(req.headers.get('content-type')!==esperado.tipo)return json({ok:false,error:'Formato distinto del archivo elegido.'},415);
-      const b=await leerArchivo(req,MAX);
-      if(!b||b.byteLength!==esperado.tamano||mime(b)!==esperado.tipo)return json({ok:false,error:'El archivo no coincide con el original o supera 25 MB.'},400);
+      const b=await leerArchivo(req,esperado.tipo==='video/mp4'?MAX_VIDEO:MAX_IMAGEN);
+      if(!b||b.byteLength!==esperado.tamano||mime(b)!==esperado.tipo)return json({ok:false,error:'El archivo no coincide con el original o supera el límite (video 100 MB, imagen 20 MB).'},400);
       const r2Key=`renovaciones-reales/contenidos/${id}/${contenido}/${pos}-${crypto.randomUUID()}`;
       await env.SERVICIOS_CONTENIDOS_R2.put(r2Key,b,{httpMetadata:{contentType:esperado.tipo}});
       try {await medios.updateOne({_id:clave,renovacionId:id},{$set:{renovacionId:id,contenidoId:contenido,posicion:pos,nombre:esperado.nombre,tipo:esperado.tipo,tamano:esperado.tamano,r2Key,subidoEn:new Date()}},{upsert:true});}

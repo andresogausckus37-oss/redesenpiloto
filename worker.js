@@ -363,7 +363,7 @@ function validarConfiguracionServicio(datos) {
       if (!archivo || typeof archivo !== "object" || Array.isArray(archivo)) return null;
       const nombre = textoServicio(archivo.nombre, 180);
       const tipo = textoServicio(archivo.tipo, 80);
-      const limite = p.tipo === "reel" ? 150 * 1024 * 1024 : 20 * 1024 * 1024;
+      const limite = p.tipo === "reel" ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
       if (!nombre || tipo === null || !Number.isSafeInteger(archivo.tamano) ||
           archivo.tamano <= 0 || archivo.tamano > limite) return null;
       if (p.tipo === "reel" && tipo !== "video/mp4" && !/\.mp4$/i.test(nombre)) return null;

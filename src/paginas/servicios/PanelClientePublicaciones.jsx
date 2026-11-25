@@ -316,8 +316,8 @@ const medirProporcionArchivo = (archivo, esReel) => new Promise(resolve => {
   if (esReel) {
     const v = document.createElement("video");
     v.preload = "metadata";
-    v.onloadedmetadata = () => { const w = v.videoWidth || 0, h = v.videoHeight || 0; URL.revokeObjectURL(url); resolve({ w, h, ratio: h ? w / h : 0 }); };
-    v.onerror = () => { URL.revokeObjectURL(url); resolve({ w: 0, h: 0, ratio: 0 }); };
+    v.onloadedmetadata = () => { const w = v.videoWidth || 0, h = v.videoHeight || 0; URL.revokeObjectURL(url); resolve({ w, h, ratio: h ? w / h : 0, duracion: v.duration || 0 }); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolve({ w: 0, h: 0, ratio: 0, duracion: 0 }); };
     v.src = url;
   } else {
     const img = new Image();
@@ -436,15 +436,17 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     const esReel = item.tipo === "reel";
     const invalidos = nuevos.some(archivo => archivo.size <= 0 ||
       (esReel
-        ? archivo.type !== "video/mp4" || archivo.size > 150 * 1024 * 1024
+        ? archivo.type !== "video/mp4" || archivo.size > 100 * 1024 * 1024
         : !["image/jpeg", "image/png", "image/webp"].includes(archivo.type) || archivo.size > 20 * 1024 * 1024));
-    if (invalidos || (modoRenovacion && nuevos.some(a => a.size > 25 * 1024 * 1024))) {
-      setErrorEditor(modoRenovacion ? "En la semana pagada, cada archivo debe pesar 25 MB como máximo." : esReel ? "Seleccioná videos MP4 de hasta 150 MB." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
+    if (invalidos) {
+      setErrorEditor(esReel ? "Seleccioná videos MP4 de hasta 100 MB, hasta 90 segundos, 1080x1920 como máximo." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB.");
       return;
     }
     // Validación de proporción: si una imagen no es del formato elegido, no se sube.
     for (const archivo of nuevos) {
-      const { w, h, ratio } = await medirProporcionArchivo(archivo, esReel);
+      const { w, h, ratio, duracion } = await medirProporcionArchivo(archivo, esReel);
+      if (esReel && duracion > 90) { setErrorEditor(`El video ${archivo.name} dura ${Math.round(duracion)} segundos. Subí una versión de hasta 90 segundos. No se subió ningún archivo.`); return; }
+      if (esReel && w && h && (w > 1080 || h > 1920)) { setErrorEditor(`El video ${archivo.name} es ${w}x${h}. Exportalo en 1080x1920 como máximo y volvé a subirlo. No se subió ningún archivo.`); return; }
       const esperado = RATIO_ESPERADO[item.formato] || 0;
       if (w && h && esperado && Math.abs(ratio - esperado) / esperado > 0.03) {
         setErrorEditor(`La imagen ${archivo.name} es ${w}x${h}. Para ${FORMATO_TEXTO[item.formato] || item.formato} recortala a esa proporción y volvé a subirla. No se subió ningún archivo.`);
@@ -777,12 +779,12 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               <label className={`flex items-center justify-center gap-2 rounded-sm border border-dashed border-borde bg-white px-3 py-3 text-center transition ${sinEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-azul"}`}>
                 <CloudUpload size={19} className="shrink-0 text-azul" />
                 <span className="text-xs font-medium">{item.archivos.length ? "Agregar o cambiar archivos" : "Elegir archivos"}</span>
-                <span className="hidden text-xs text-tinta-apagado sm:inline">{modoRenovacion ? "Hasta 25 MB por archivo" : item.tipo === "reel" ? "MP4 · 150 MB" : "JPG, PNG, WebP · 20 MB"}</span>
+                <span className="hidden text-xs text-tinta-apagado sm:inline">{item.tipo === "reel" ? "MP4 · Máx. 100 MB · Máx. 90 seg · Máx. 1080x1920" : "JPG, PNG, WebP · 20 MB"}</span>
                 <input type="file" className="sr-only" disabled={sinEdicion}
                   accept={item.tipo === "reel" ? "video/mp4,.mp4" : "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"}
                   multiple={esCarrusel} onChange={seleccionarArchivos} />
               </label>
-              <p className="mt-2 text-[11px] text-tinta-apagado">{esCarrusel ? "De 2 a 10 imágenes" : item.tipo === "reel" ? "Un video MP4" : "Una imagen"}.</p>
+              <p className="mt-2 text-[11px] text-tinta-apagado">{esCarrusel ? "De 2 a 10 imágenes" : item.tipo === "reel" ? "Un video MP4 de hasta 100 MB, hasta 90 segundos, 1080x1920 como máximo" : "Una imagen"}.</p>
               {modoRenovacion && redes.includes("instagram") && item.tipo !== "reel" && (
                 <p className="mt-1 text-[11px] text-tinta-suave">
                   Admitimos JPG, PNG y WebP. Durante la revisión, preparamos una copia JPEG antes de programar Instagram.

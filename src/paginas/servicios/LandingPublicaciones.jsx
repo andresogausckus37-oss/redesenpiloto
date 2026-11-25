@@ -256,17 +256,31 @@ export default function LandingPublicaciones() {
       setVistaRed(red);
     }
   }
-  function elegirArchivo(evento) {
+  async function elegirArchivo(evento) {
     const candidatos = Array.from(evento.target.files || []);
     evento.target.value = "";
     if (!candidatos.length) return;
     const esReel = contenido.tipo === "reel";
     const validos = candidatos.filter((archivo) => {
       const tipoValido = esReel ? archivo.type === "video/mp4" || /\.mp4$/i.test(archivo.name) : ["image/jpeg", "image/png", "image/webp"].includes(archivo.type);
-      return tipoValido && archivo.size > 0 && archivo.size <= (esReel ? 150 : 20) * 1024 * 1024;
+      return tipoValido && archivo.size > 0 && archivo.size <= (esReel ? 100 : 20) * 1024 * 1024;
     });
-    setMensajeArchivo(validos.length !== candidatos.length ? esReel ? "Seleccioná videos MP4 de hasta 100 MB, hasta 90 segundos, 1080x1920." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB." : "");
+    setMensajeArchivo(validos.length !== candidatos.length ? esReel ? "Seleccioná videos MP4 de hasta 100 MB, hasta 90 segundos, 1080x1920 como máximo." : "Seleccioná imágenes JPG, PNG o WebP de hasta 20 MB." : "");
     if (!validos.length) return;
+    if (esReel) {
+      for (const archivo of validos) {
+        const meta = await new Promise((resolver) => {
+          const url = URL.createObjectURL(archivo);
+          const v = document.createElement("video");
+          v.preload = "metadata";
+          v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolver({ w: v.videoWidth || 0, h: v.videoHeight || 0, duracion: v.duration || 0 }); };
+          v.onerror = () => { URL.revokeObjectURL(url); resolver({ w: 0, h: 0, duracion: 0 }); };
+          v.src = url;
+        });
+        if (meta.duracion > 90) { setMensajeArchivo(`El video ${archivo.nombre} dura ${Math.round(meta.duracion)} segundos. Subí una versión de hasta 90 segundos.`); return; }
+        if (meta.w && meta.h && (meta.w > 1080 || meta.h > 1920)) { setMensajeArchivo(`El video ${archivo.nombre} es ${meta.w}x${meta.h}. Exportalo en 1080x1920 como máximo.`); return; }
+      }
+    }
     const esCarrusel = contenido.tipo === "carrusel";
     const anteriores = esCarrusel ? contenido.archivos : [];
     const disponibles = (esCarrusel ? 10 : 1) - anteriores.length;

@@ -190,14 +190,16 @@ function comprobarArchivo(archivo, tipo) {
 async function validarDuracionVideo(archivo) {
   if (archivo.type !== "video/mp4") return;
   const url = URL.createObjectURL(archivo);
-  const duracion = await new Promise((resolver) => {
+  const meta = await new Promise((resolver) => {
     const v = document.createElement("video");
     v.preload = "metadata";
-    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolver(v.duration || 0); };
-    v.onerror = () => { URL.revokeObjectURL(url); resolver(0); };
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolver({ duracion: v.duration || 0, w: v.videoWidth || 0, h: v.videoHeight || 0 }); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolver({ duracion: 0, w: 0, h: 0 }); };
     v.src = url;
   });
-  if (duracion > 90) throw new Error("El video no puede superar 90 segundos. Exportá una versión de hasta 90 segundos en 1080p.");
+  if (meta.duracion > 90) throw new Error("El video no puede superar 90 segundos. Exportá una versión de hasta 90 segundos en 1080p.");
+  if (meta.w && meta.h && (meta.w > 1080 || meta.h > 1920)) throw new Error(`El video ${archivo.name} es ${meta.w}x${meta.h}. Exportalo en 1080x1920 como máximo y volvé a subirlo.`);
+  if (meta.w && meta.h && Math.abs((meta.w / meta.h) - 0.5625) / 0.5625 > 0.03) throw new Error(`El video ${archivo.name} no es 9:16. Recortalo a esa proporción y volvé a subirlo.`);
 }
 export default function ArchivosPedido({ pedido }) {
   const [datos, setDatos] = useState(null);
@@ -339,7 +341,7 @@ export default function ArchivosPedido({ pedido }) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs font-medium text-tinta">{contenido.tipo === "reel" ? <Film size={16}/> : <FileImage size={16}/>} Contenido {i+1} · {nombreTipo(contenido.tipo) + (() => { const f = String(contenido.formato || contenido.proporcion || contenido.ratio || (contenido.tipo === "reel" ? "9:16" : "4:5")); const m = f.match(/\(([^)]+)\)/); return m ? ` (${m[1]})` : (f.includes(':') ? ` (${f})` : ''); })()}</div>
                   <span className={`text-[11px] font-medium ${completo ? "text-emerald-700" : "text-tinta-apagado"}`}>{propios.length}/{limite} archivos</span>
-                {contenido.tipo === "reel" && <p className="mt-2 text-[11px] leading-4 text-tinta-suave"><span className="block">Max. 100 MB</span><span className="block">Max. 90 seg</span><span className="block">Min. 720x1280</span><span className="block">Max. 1080x1920</span><span className="block">(recomendado)</span></p>}
+                {contenido.tipo === "reel" && <p className="mt-2 text-[11px] leading-4 text-tinta-suave"><span className="block">Max. 100 MB</span><span className="block">Max. 90 seg</span><span className="block">Max. 1080x1920</span><span className="block">(recomendado)</span></p>}
                 </div>
                 {!!contenido.descripcion && <p className="mt-2 line-clamp-2 overflow-hidden text-xs text-tinta-suave" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis" }} title={contenido.descripcion}>{contenido.descripcion}</p>}
                 {propios.map(a => <div key={a.posicion} className="mt-2 rounded-sm bg-white p-2 text-xs">
