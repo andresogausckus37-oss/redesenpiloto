@@ -154,19 +154,29 @@ function partesEnZona(fecha, zona) {
   const v = Object.fromEntries(partes.map(p => [p.type, p.value]));
   return { anio: Number(v.year), mes: Number(v.month), dia: Number(v.day), hora: Number(v.hour), minuto: Number(v.minute) };
 }
-function esDiaBloqueado(dia) {
-  const ahora = new Date();
-  const arg = partesEnZona(ahora, "America/Argentina/Buenos_Aires");
-  const hoyArg = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia)).getUTCDay();
+function primerDiaElegible() {
+  const arg = partesEnZona(new Date(), "America/Argentina/Buenos_Aires");
+  const d = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia, 12)); // mediodía UTC = mismo día en Argentina
+  d.setUTCDate(d.getUTCDate() + (arg.hora >= 18 ? 2 : 1));
+  return d.getTime();
+}
+function fechaParaDiaISO(dia, base = null) {
   const indiceDia = { "Domingo": 0, "Lunes": 1, "Martes": 2, "Miércoles": 3, "Jueves": 4, "Viernes": 5, "Sábado": 6 };
   const objetivo = indiceDia[dia];
-  if (objetivo === undefined) return false;
-  const offset = (objetivo - hoyArg + 7) % 7;
-  if (offset === 0) return true;
-  if (offset === 1 && arg.hora >= 18) return true;
+  if (objetivo === undefined) return null;
+  // Ventana de esta semana: si es pagada, empieza al terminar la anterior; si no, en el primer día elegible.
+  // Si el cliente configura tarde, nunca puede empezar en el pasado: se usa el mayor de los dos.
+  const inicio = new Date(Math.max(base || 0, primerDiaElegible()));
+  inicio.setUTCHours(12, 0, 0, 0); // mediodía UTC = mismo día en Argentina
+  inicio.setUTCDate(inicio.getUTCDate() + ((objetivo - inicio.getUTCDay() + 7) % 7));
+  return inicio;
+}
+function esDiaBloqueado(dia) {
+  // El nombre del día se refiere a la ventana de 7 días de ESTA semana (gratuita o pagada posterior).
+  // Ej: si hoy es martes 25 a las 21:00, "Miércoles" en la gratuita es el 3 dic, no el 26. Por eso ningún nombre se bloquea.
   return false;
 }
-function validarPrimerDia(contenidos) {
+function validarPrimerDia(contenidos, base = null) {
   const ahora = new Date();
   const arg = partesEnZona(ahora, "America/Argentina/Buenos_Aires");
   const hoyArg = new Date(Date.UTC(arg.anio, arg.mes - 1, arg.dia)).getUTCDay();
@@ -176,14 +186,11 @@ function validarPrimerDia(contenidos) {
     const c = contenidos[k];
     const objetivo = indiceDia[c.dia];
     if (objetivo === undefined) continue;
-    let offset = (objetivo - hoyArg + 7) % 7;
-    if (offset === 0) return `Contenido ${k + 1}: hoy no se puede publicar. Elegí un día a partir de mañana.`;
-    if (offset === 1 && despuesCorte) return `Contenido ${k + 1}: enviás después de las 18:00 (hora Argentina), por eso mañana ya no está disponible. Elegí a partir de pasado mañana.`;
+    const fechaReal = fechaParaDiaISO(c.dia, base);
+    if (!fechaReal) continue;
     const [hh, mm] = String(c.hora || "09:00").split(":").map(Number);
-    const pub = new Date(ahora.getTime());
-    pub.setHours(0, 0, 0, 0);
-    pub.setDate(pub.getDate() + offset);
-    pub.setHours(hh, mm, 0, 0);
+    const pub = new Date(fechaReal.getTime());
+    pub.setUTCHours(hh + 3, mm, 0, 0); // hora Argentina -> UTC
     if (pub.getTime() < ahora.getTime() + 4 * 3600 * 1000) return `Contenido ${k + 1}: tiene que quedar a más de 4 horas del envío. Elegí un horario más tarde o un día posterior.`;
   }
   return "";
@@ -196,18 +203,19 @@ const formatoRango = (inicio, fin, zona) => {
     const di = new Date(inicio), df = new Date(fin);
     if (!Number.isFinite(di.getTime()) || !Number.isFinite(df.getTime())) return "";
     const fmt = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) });
-    return `Del ${fmt.format(di)} al ${fmt.format(df)} · 7 días`;
+    const dfMuestra = new Date(df.getTime() - 86400000);
+    return `Del ${fmt.format(di)} al ${fmt.format(dfMuestra)} · 7 días`;
   } catch { return ""; }
 };
 const textoQuedan = (fin, zona) => {
   try {
     if (!fin) return "";
     const d = new Date(fin); if (!Number.isFinite(d.getTime())) return "";
-    const dias = Math.ceil((d.getTime() - Date.now()) / 86400000);
-    const termina = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) }).format(d);
-    if (dias <= 0) return `Termina hoy · ${termina}`;
-    if (dias === 1) return `Queda 1 día · Termina el ${termina}`;
-    return `Quedan ${dias} días · Termina el ${termina}`;
+    const dias = Math.min(7, Math.ceil((d.getTime() - Date.now()) / 86400000));
+    const termina = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) }).format(new Date(d.getTime() - 86400000));
+    if (dias <= 0) return `Termina hoy a las 11:59 p. m. · ${termina}`;
+    if (dias === 1) return `Queda 1 día · Termina el ${termina} a las 11:59 p. m.`;
+    return `Quedan ${dias} días · Termina el ${termina} a las 11:59 p. m.`;
   } catch { return ""; }
 };
 // Próxima fecha real de un día de semana (ej: "jueves 19 nov") según la zona del cliente.
@@ -217,10 +225,8 @@ const fechaParaDia = (dia, zona, base = null) => {
   try {
     const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
     const fmtFecha = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) });
-    for (let delta = 0; delta <= 7; delta++) {
-      const cand = new Date((base || Date.now()) + delta * 86400000);
-      if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return fmtFecha.format(cand);
-    }
+    const fechaReal = fechaParaDiaISO(dia, base);
+    if (fechaReal) return fmtFecha.format(fechaReal);
   } catch {}
   return "";
 };
@@ -252,10 +258,8 @@ const diasEnOrdenCronologico = (zona, base = null) => {
   const deltaParaDia = (dia) => {
     try {
       const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
-      for (let delta = 0; delta <= 6; delta++) {
-        const cand = new Date((base || Date.now()) + delta * 86400000);
-        if (fmtDia.format(cand).toLowerCase() === String(dia).toLowerCase()) return delta;
-      }
+      const fechaReal = fechaParaDiaISO(dia, base);
+      if (fechaReal) return Math.round((fechaReal.getTime() - Math.max(base || 0, primerDiaElegible())) / 86400000);
     } catch {}
     return 7;
   };
@@ -341,7 +345,7 @@ class ErrorBoundaryEditor extends Component {
   }
 }
 function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = null, inicioSemana = null }) {
-  const baseSemana = inicioSemana ? new Date(new Date(inicioSemana).getTime() + 86400000).getTime() : null;
+  const baseSemana = inicioSemana ? new Date(inicioSemana).getTime() : null; // fin anterior (exclusivo) = inicio de esta semana
   const modoRenovacion = Boolean(pedidoRenovacion?.id);
   const [redes, setRedes] = useState(() => modoRenovacion ? pedidoRenovacion.redes : ["facebook", "instagram"]);
   const [paisZona, setPaisZona] = useState(() => ZONAS_DISPONIBLES.some(x => x.pais === perfil?.pais) ? perfil.pais : "Argentina");
@@ -488,7 +492,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     evento.preventDefault();
     if (envioEnCurso.current || !habilitada || !datosCompletos) return;
     if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
-    const errorDias = validarPrimerDia(contenidos);
+    const errorDias = validarPrimerDia(contenidos, baseSemana);
     if (errorDias) { setErrorEditor(errorDias); return; }
     if (contenidos.some(c => c.archivos.length < (c.tipo === "carrusel" ? 2 : 1))) {
       setErrorEditor("Elegí los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
@@ -505,7 +509,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     setMostrarConfirmacion(false);
     if (envioEnCurso.current || !habilitada || !datosCompletos) return;
     if (!redes.length) { setErrorEditor("Elegí al menos una red."); return; }
-    const errorDias = validarPrimerDia(contenidos);
+    const errorDias = validarPrimerDia(contenidos, baseSemana);
     if (errorDias) { setErrorEditor(errorDias); return; }
     // Mínimo 4h de anticipación para el contenido de hoy: da margen para revisar, aprobar y activar.
     // Si no, al activar el horario ya pasó y el contenido salta al mismo día de la semana siguiente.
@@ -513,7 +517,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
       const ahora = Date.now();
       const sinMargen = contenidos.find(c => {
         try {
-          const fechaDia = fechaParaDia(c.dia, zonaHoraria);
+          const fechaDia = fechaParaDia(c.dia, zonaHoraria, baseSemana);
           if (!fechaDia) return false;
           const [hh, mm] = String(c.hora || "00:00").split(":").map(Number);
           const t = new Date(fechaDia); t.setHours(hh || 0, mm || 0, 0, 0);
@@ -1710,7 +1714,7 @@ function infoPersonal(datos, pedido) {
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tus contenidos. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
+          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tu pedido. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
