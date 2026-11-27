@@ -528,6 +528,11 @@ async function resumenPanel(db, usuario) {
       contenidos: Array.isArray(p.publicaciones) ? p.publicaciones.map(c => ({
         id: c.id, tipo: c.tipo, estado: c.estado || "pendiente_preparacion",
       })) : [],
+      historias: Array.isArray(p.historias) ? p.historias.map(h => ({
+        id: h.id, tipo: h.tipo, formato: "9:16", estado: h.estado || "pendiente_preparacion",
+        diaPreferido: h.diaPreferido, horaLocalPreferida: h.horaLocalPreferida,
+        llevaEnlace: h.llevaEnlace, textoEnlace: h.textoEnlace || "", modo: h.modo || (h.llevaEnlace ? "con_notificacion" : "automatica"),
+      })) : [],
       facebook: conexion ? {
         nombre: conexion.nombre || "Página de Facebook",
         pageId: conexion.pageId || "",

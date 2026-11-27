@@ -98,7 +98,7 @@ export async function activarSemanaDesdeAdmin(db, env, pedidoId, revision) {
   if(revision!==evaluacion.revision||!validarAprobacion(pedido,evaluacion,aprobacion,solicitud))
     return {ok:false,error:'Faltan requisitos, aprobación o consentimiento vigente. Reabrí la revisión.',status:409};
   const archivos=await db.collection('archivos_servicios').find({pedidoId,estado:'subido'}).toArray();
-  for(const p of pedido.publicaciones){
+  for(const p of [...pedido.publicaciones, ...(Array.isArray(pedido.historias)?pedido.historias:[])]){
     const lista=archivos.filter(a=>a.contenidoId===p.id);
     if(lista.length < (p.tipo==='carrusel'?2:1) || lista.length > (p.tipo==='carrusel'?10:1) ||
       lista.some(a=>a.revision!=='aprobado'||!MEDIOS.has(a.tipo)||!a.r2Key))
@@ -123,7 +123,7 @@ export async function activarSemanaDesdeAdmin(db, env, pedidoId, revision) {
   const ahora=new Date();
   const ancla=new Date(ahora.getTime()+15*60000);
   const calendario=calcularCalendarioSimulado(pedido,ancla);
-  if(calendario.advertencias.length||calendario.eventos.length!==pedido.publicaciones.length*pedido.redes.length)
+  if(calendario.advertencias.length||calendario.eventos.length!==(pedido.publicaciones.length*pedido.redes.length+(Array.isArray(pedido.historias)?pedido.historias.length:0)))
     return {ok:false,error:'El calendario presenta advertencias o faltan horarios. Revisalo antes de activar.',status:409};
   const eventos=calendario.eventos.map(e=>({
     id:e.id,red:e.red,contenidoId:e.contenidoId,tipo:e.tipo,fechaHoraUTC:e.fechaHoraUTC,
@@ -149,7 +149,8 @@ export async function activarSemanaDesdeAdmin(db, env, pedidoId, revision) {
     'prueba.estado':'activa','prueba.inicio':programacion.inicio,'prueba.fin':programacion.fin,
     fechaInicioServicio:programacion.inicio,fechaFinServicio:programacion.fin,activadoEn:fecha,
     actualizadoEn:fecha,publicacionHabilitada:true,
-    publicaciones:pedido.publicaciones.map(p=>({...p,fechaHoraDefinitiva:finalFechas.get(p.id)||null,estado:'programado'}))
+    publicaciones:pedido.publicaciones.map(p=>({...p,fechaHoraDefinitiva:finalFechas.get(p.id)||null,estado:'programado'})),
+    historias:(Array.isArray(pedido.historias)?pedido.historias:[]).map(h=>({...h,fechaHoraDefinitiva:finalFechas.get(h.id)||null,estado:'programado'}))
   }});
   if(!modificacion.modifiedCount){
     const comprobacion=await pedidos.findOne({pedidoId});

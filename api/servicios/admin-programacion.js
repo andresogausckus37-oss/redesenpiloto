@@ -95,13 +95,13 @@ async function verificar(db, pedido) {
   const consentimiento = solicitud?.estado === "solicitud_confirmada_pendiente_habilitacion" &&
     solicitud?.aceptaProgramacionYPublicacionAlHabilitar === true &&
     evaluacion.revision && evaluacion.revision === solicitud.revision;
-  const cantidad = Array.isArray(pedido.redes) ? 4 * pedido.redes.length : 0;
+  const cantidad = Array.isArray(pedido.redes) ? 4 * pedido.redes.length + (Array.isArray(pedido.historias) ? pedido.historias.length : 0) : 0;
   const listo = Boolean(evaluacion.lista && evaluacion.aprobados && consentimiento &&
     cantidad >= 4 && calendario.eventos.length === cantidad && calendario.advertencias.length === 0);
   return { solicitud, evaluacion, calendario, consentimiento, cantidad, listo };
 }
 function fechaLocal(item, zona) {
-  try { return new Intl.DateTimeFormat("es-AR", { timeZone: zona, weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(item.fechaHoraUTC)); }
+  try { return new Intl.DateTimeFormat("es-AR", { timeZone: zona, weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(item.fechaHoraUTC)) + " hs"; }
   catch { return "Fecha inválida"; }
 }
 export async function ejecutarAdminProgramacion(request, env, autorizado) {
@@ -209,7 +209,7 @@ export async function ejecutarAdminProgramacion(request, env, autorizado) {
       ].join("");
       const fallos = [...validacion.evaluacion.motivos, ...validacion.calendario.advertencias]
         .map(x => `<li>${escapar(x)}</li>`).join("");
-      const filas = validacion.calendario.eventos.map(e => `<div class="evento"><strong>Contenido ${escapar(e.numeroContenido)}</strong><span class="chip">${escapar(e.tipo)} · ${escapar(e.red)}</span><span>${escapar(fechaLocal(e, pedido.zonaHoraria))}</span></div>`).join("");
+      const filas = validacion.calendario.eventos.filter(e => !e.soloAviso).map(e => `<div class="evento"><strong>${escapar(typeof e.numeroContenido === "string" ? e.numeroContenido : `Contenido ${e.numeroContenido}`)}</strong><span class="chip">${escapar(e.tipo)} · ${escapar(e.red)}</span><span>${escapar(fechaLocal(e, pedido.zonaHoraria))}</span></div>`).join("");
       const vigente = existente?.revision === validacion.evaluacion.revision &&
         existente?.estado === "aprobacion_administrativa_pendiente_activacion";
       const listaActivacion = vigente && validacion.listo && pedido.estadoServicio === 'sin_activar';
@@ -217,6 +217,7 @@ export async function ejecutarAdminProgramacion(request, env, autorizado) {
         <section><h2>Resumen del pedido</h2><div class="grid"><div class="dato"><small>ID del pedido</small><strong>${escapar(pedidoId)}</strong></div><div class="dato"><small>Emprendimiento</small><strong>${escapar(pedido.negocio?.nombre || "—")}</strong></div><div class="dato"><small>Redes elegidas</small><strong>${escapar((pedido.redes || []).join(" · "))}</strong></div><div class="dato"><small>Zona horaria</small><strong>${escapar(pedido.zonaHoraria || "—")}</strong></div><div class="dato"><small>Estado del servicio</small><strong>${escapar((pedido.estadoServicio || "—").replaceAll("_", " "))}</strong></div></div><div class="acciones-link"><a class="enlace-suave" href="/api/admin/servicios/publicaciones/archivos?pedidoId=${encodeURIComponent(pedidoId)}">Revisar archivos y correcciones ↗</a><a class="enlace-suave" href="${RUTA}">Volver a los pedidos</a></div></section>
         <section><h2>Verificaciones previas</h2>${condiciones}${fallos ? `<ul class="mal lista-fallos">${fallos}</ul>` : ""}</section>
         <section><h2>Programación propuesta</h2><p class="muted">Horarios calculados desde este momento, según la zona horaria del cliente. Todavía no son fechas definitivas.</p>${filas || '<p class="muted">No se pudo generar una propuesta completa.</p>'}</section>
+        ${validacion.calendario.eventos.some(e => e.soloAviso) ? `<section><h2>Historias con notificación</h2><p class="muted">Estas historias no se publican solas. A la hora programada se avisa al cliente por email y en el panel para que las publique a mano desde Instagram.</p>${validacion.calendario.eventos.filter(e => e.soloAviso).map(e => `<div class="evento"><strong>${escapar(typeof e.numeroContenido === "string" ? e.numeroContenido : `Contenido ${e.numeroContenido}`)}</strong><span class="chip">${escapar(e.tipo)} · instagram · con notificación</span><span>${escapar(fechaLocal(e, pedido.zonaHoraria))}</span></div>`).join("")}</section>` : ""}
         <section class="accion-panel"><h2>Aprobación y activación</h2>${vigente ? '<p class="bien">La revisión administrativa está aprobada. La activación es el siguiente paso.</p>' : ""}
           ${validacion.listo && !vigente ? `<form method="post" action="${RUTA}"><input type="hidden" name="pedidoId" value="${escapar(pedidoId)}"><input type="hidden" name="accion" value="aprobar_revision"><input type="hidden" name="csrf" value="${token(env,pedidoId,validacion.evaluacion.revision)}"><button type="submit">Aprobar revisión administrativa</button></form>` : !vigente ? '<p class="muted">Completá los requisitos pendientes antes de aprobar.</p>' : ''}
           ${listaActivacion ? `<form method="post" action="${RUTA}">

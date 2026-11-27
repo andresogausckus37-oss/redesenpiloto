@@ -74,7 +74,7 @@ export async function ejecutarDetallesPanel(request,env) {
         nombreEmprendimiento:1,emprendimiento:1,perfil:1,
       }});
       const documentos=await pedidos.find({tipo:'publicaciones',clienteUsuarioId:usuario.id})
-        .sort({creadoEn:-1}).limit(30).project({_id:0,pedidoId:1,negocio:1,prueba:1,publicaciones:1,estadoServicio:1,zonaHoraria:1}).toArray();
+        .sort({creadoEn:-1}).limit(30).project({_id:0,pedidoId:1,negocio:1,prueba:1,publicaciones:1,historias:1,estadoServicio:1,zonaHoraria:1}).toArray();
       const ids=documentos.map(x=>x.pedidoId).filter(x=>IDENTIFICADOR.test(x||''));
       const conexion=ids.length?await db.collection('conexiones_meta_pedidos').find({
         pedidoId:{$in:ids},plataforma:{$in:['facebook','instagram']}
@@ -113,7 +113,8 @@ export async function ejecutarDetallesPanel(request,env) {
           redes:Array.isArray(r.redes)?r.redes.filter(x=>['instagram','facebook'].includes(x)):[],
           zonaHoraria:plan.zonaHoraria||'',inicio:plan.inicio,fin:plan.fin,
           estado:plan.estado,programadas:eventos.length,realizadas:eventos.filter(e=>e.estado==='publicada').length,
-          total:4*(r.redes?.length||0),contenidos});
+          total:4*(r.redes?.length||0),contenidos,
+          historias:(r.configuracion?.historias||[]).map(h=>{ const porRed=eventos.filter(e=>e.contenidoId===h.id); return { id:texto(h.id,60), tipo:texto(h.tipo,30), formato:"9:16", diaPreferido:texto(h.diaPreferido,30), horaLocalPreferida:texto(h.horaLocalPreferida,10), llevaEnlace:!!h.llevaEnlace, textoEnlace:texto(h.textoEnlace,500), modo:texto(h.modo,30), estado:texto(h.estado,40), fechaHoraDefinitiva:porRed[0]?.fechaHoraUTC||null, estadoPorRed:Object.fromEntries(porRed.map(e=>[e.red,e.estado==='publicada'?'publicado':e.estado==='atencion_manual'?'error':'programado'])), urlsPublicadas:{}}; })});
       }
       const ultimo=documentos[0];
       const perfil = {
@@ -127,7 +128,7 @@ export async function ejecutarDetallesPanel(request,env) {
         p.pedidoId,{cuentas:cuentas[p.pedidoId],
           zonaHoraria:texto(p.zonaHoraria,80),
           prueba:{estado:texto(p.prueba?.estado,50),inicioEn:p.prueba?.inicioEn||p.prueba?.inicio||null,finEn:p.prueba?.finEn||p.prueba?.fin||null},
-          contenidos:Array.isArray(p.publicaciones)?p.publicaciones.slice(0,4).map(c=>{
+          contenidos:[...(Array.isArray(p.publicaciones)?p.publicaciones.slice(0,4):[]), ...(Array.isArray(p.historias)?p.historias:[])].map(c=>{
             const minimo=miniContenido(c);
             const eventos=programacionesPorId.get(p.pedidoId)?.eventos||[];
             const porRed=eventos.filter(e=>e.contenidoId===c.id);
@@ -140,7 +141,7 @@ export async function ejecutarDetallesPanel(request,env) {
               .map(e=>[e.red,enlacePublicadoSeguro(e.enlace)])
               .filter(([,enlace])=>Boolean(enlace)))};
             return minimo;
-          }):[]}
+          })}
       ]));
       return respuesta({ok:true,perfil,detalles,semanasPagadas});
     });

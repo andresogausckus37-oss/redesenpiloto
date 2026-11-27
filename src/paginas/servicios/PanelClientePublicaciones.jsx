@@ -140,14 +140,14 @@ const ZONAS_DISPONIBLES = [
 // Configuración de la semana dentro del panel: no se navega a otra página.
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const HORAS_SEMANA = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
-// Convierte "14:00" -> "2:00 p. m." (definido arriba para evitar problemas de scope)
+// Formato 24 horas (definido arriba para evitar problemas de scope)
 const FORMATO_TEXTO = { "1:1": "1080x1080 (1:1)", "4:5": "1080x1350 (4:5)", "9:16": "1080x1920 (9:16)" };
-const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; const hh = Number(m[1]); return `${hh % 12 || 12}:${m[2]} ${hh < 12 ? "a. m." : "p. m."}`; };
+const a12h = h => { const m = /^(\d{2}):([0-5]\d)$/.exec(h || ""); if (!m) return h || "Hora por confirmar"; return `${m[1]}:${m[2]} hs`; }; // 24 horas: 14:00 hs
 
 // --- Regla de dias: hoy nunca se publica. Corte diario 18:00 hora Argentina ---
 // Antes de las 18:00 (hora Argentina) al enviar: primer dia elegible = manana.
 // Despues de las 18:00 (hora Argentina) al enviar: primer dia elegible = pasado manana.
-// El corte se reinicia a las 00:00: enviar lunes 2 a.m. permite martes, no miercoles.
+// El corte se reinicia a las 00:00: enviar lunes 02:00 permite martes, no miercoles.
 // Se mide al enviar, no al registrarse. +4h como red de seguridad.
 function partesEnZona(fecha, zona) {
   const partes = new Intl.DateTimeFormat("es-AR", { timeZone: zona, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(fecha);
@@ -213,9 +213,9 @@ const textoQuedan = (fin, zona) => {
     const d = new Date(fin); if (!Number.isFinite(d.getTime())) return "";
     const dias = Math.min(7, Math.ceil((d.getTime() - Date.now()) / 86400000));
     const termina = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", ...(zona ? { timeZone: zona } : {}) }).format(new Date(d.getTime() - 86400000));
-    if (dias <= 0) return `Termina hoy a las 11:59 p. m. · ${termina}`;
-    if (dias === 1) return `Queda 1 día · Termina el ${termina} a las 11:59 p. m.`;
-    return `Quedan ${dias} días · Termina el ${termina} a las 11:59 p. m.`;
+    if (dias <= 0) return `Termina hoy a las 23:59 hs · ${termina}`;
+    if (dias === 1) return `Queda 1 día · Termina el ${termina} a las 23:59 hs`;
+    return `Quedan ${dias} días · Termina el ${termina} a las 23:59 hs`;
   } catch { return ""; }
 };
 // Próxima fecha real de un día de semana (ej: "jueves 19 nov") según la zona del cliente.
@@ -295,8 +295,10 @@ const crearSemana = () => SEMANA_BASE.map(([tipo, dia, hora], i) => ({
 
 function VistaArchivoLocal({ archivo, tipo }) {
   const [url, setUrl] = useState("");
+  const [errorPrevia, setErrorPrevia] = useState(false);
   useEffect(() => {
-    if (!archivo) { setUrl(""); return; }
+    if (!archivo) { setUrl(""); setErrorPrevia(false); return; }
+    setErrorPrevia(false);
     const nueva = URL.createObjectURL(archivo);
     setUrl(nueva);
     return () => URL.revokeObjectURL(nueva);
@@ -307,9 +309,15 @@ function VistaArchivoLocal({ archivo, tipo }) {
       <p className="text-xs leading-5">Elegí {tipo === "reel" ? "un video" : "imágenes"} para ver tu publicación</p>
     </div>
   );
+  if (errorPrevia) return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-black px-4 text-center">
+      <p className="text-xs leading-5 text-white">No se pudo cargar la vista previa de {archivo?.name || "este archivo"}.</p>
+      <p className="text-[11px] leading-4 text-white/80">El archivo está guardado. Volvé a elegirlo si querés verlo de nuevo.</p>
+    </div>
+  );
   return tipo === "reel"
-    ? <video key={url} className="h-full w-full object-contain" src={url} controls playsInline preload="metadata" aria-label="Vista previa del video" />
-    : <img className="h-full w-full object-contain" src={url} alt={archivo.name} />;
+    ? <video key={url} className="h-full w-full bg-black object-contain" src={url} controls playsInline preload="metadata" aria-label="Vista previa del video" onError={() => setErrorPrevia(true)} />
+    : <img className="h-full w-full bg-black object-contain" src={url} alt={archivo.name} onError={() => setErrorPrevia(true)} />;
 }
 
 // Valida proporción en el panel: si la imagen no coincide con el formato elegido, se rechaza acá,
@@ -355,6 +363,42 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     return pais?.zonas.find(([id]) => id === navegador)?.[0] || pais?.zonas[0]?.[0] || "America/Argentina/Buenos_Aires";
   });
   const [contenidos, setContenidos] = useState(crearSemana);
+  const crearHistorias = () => [1, 2, 3].map(i => ({ id: `historia-${i}`, tipo: "imagen", dia: "", hora: "", archivos: [], llevaEnlace: false, textoEnlace: "" }));
+  const [historias, setHistorias] = useState(crearHistorias);
+  const [historiaSeleccionada, setHistoriaSeleccionada] = useState(0);
+  const [errorHistoria, setErrorHistoria] = useState("");
+  const actualizarHistoria = (indice, cambios) => setHistorias(lista => lista.map((h, i) => i === indice ? { ...h, ...cambios } : h));
+  const duplicadoHistoria = () => {
+    const vistos = new Map();
+    for (let i = 0; i < historias.length; i++) {
+      const h = historias[i];
+      if (!h.archivos.length || !h.dia || !h.hora) continue;
+      const clave = `${h.dia}|${h.hora}`;
+      if (vistos.has(clave)) return { primero: vistos.get(clave) + 1, segundo: i + 1, dia: h.dia, hora: h.hora };
+      vistos.set(clave, i);
+    }
+    return null;
+  };
+  const elegirArchivoHistoria = async (indice, evento) => {
+    const archivo = evento.target.files?.[0];
+    evento.target.value = "";
+    if (!archivo) return;
+    const h = historias[indice];
+    const esVideo = h.tipo === "reel";
+    if (esVideo && archivo.type !== "video/mp4") { setErrorHistoria("La historia en video tiene que ser MP4."); return; }
+    if (!esVideo && !["image/jpeg", "image/png", "image/webp"].includes(archivo.type)) { setErrorHistoria("La historia en imagen tiene que ser JPG, PNG o WebP."); return; }
+    if (archivo.size > (esVideo ? 100 : 20) * 1024 * 1024) { setErrorHistoria(esVideo ? "El video de historia tiene que pesar hasta 100 MB." : "La imagen de historia tiene que pesar hasta 20 MB."); return; }
+    try {
+      const medida = await medirProporcionArchivo(archivo, esVideo);
+      if (medida.ratio && Math.abs(medida.ratio - 0.5625) / 0.5625 > 0.03) { setErrorHistoria("La historia tiene que ser 9:16. Recortala a esa proporción y volvé a subirla."); return; }
+      if (esVideo) {
+        const duracion = await new Promise(res => { const url = URL.createObjectURL(archivo); const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => { URL.revokeObjectURL(url); res(v.duration || 0); }; v.onerror = () => { URL.revokeObjectURL(url); res(0); }; v.src = url; });
+        if (duracion > 60) { setErrorHistoria(`El video de historia dura ${Math.round(duracion)} segundos. Instagram corta las historias a los 60 segundos.`); return; }
+      }
+    } catch {}
+    setErrorHistoria("");
+    actualizarHistoria(indice, { archivos: [archivo] });
+  };
   // Correccion semana por defecto: ningun contenido nace en hoy ni en manana bloqueada.
   const corregirDiasBloqueadosPorDefecto = () => {
     setContenidos(lista => {
@@ -385,6 +429,13 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
   useEffect(() => { const id = setInterval(() => setTick(v => v + 1), 60000); return () => clearInterval(id); }, []);
   const [seleccionado, setSeleccionado] = useState(0);
   const [redVista, setRedVista] = useState("instagram");
+  const [logoVistaPrevia, setLogoVistaPrevia] = useState(() => { try { return localStorage.getItem("logo-emprendimiento") || ""; } catch { return ""; } });
+  useEffect(() => {
+    const actualizar = () => { try { setLogoVistaPrevia(localStorage.getItem("logo-emprendimiento") || ""); } catch {} };
+    window.addEventListener("logo-emprendimiento-cambio", actualizar);
+    window.addEventListener("storage", actualizar);
+    return () => { window.removeEventListener("logo-emprendimiento-cambio", actualizar); window.removeEventListener("storage", actualizar); };
+  }, []);
   const [mediaVista, setMediaVista] = useState(0);
   const [habilitada, setHabilitada] = useState(false);
   const [consultando, setConsultando] = useState(true);
@@ -497,6 +548,8 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
     if (contenidos.some(c => c.archivos.length < (c.tipo === "carrusel" ? 2 : 1))) {
       setErrorEditor("Elegí los archivos de los cuatro contenidos. Cada carrusel necesita al menos dos imágenes."); return;
     }
+    const dupH = duplicadoHistoria();
+    if (dupH) { setErrorEditor(`La historia ${dupH.primero} y la historia ${dupH.segundo} tienen el mismo día y hora (${dupH.dia} a las ${dupH.hora}). Cambiá el día o la hora de una.`); return; }
     const dup = duplicadoDiaHora();
     if (dup) {
       setErrorEditor(`El contenido ${dup.primero} y el contenido ${dup.segundo} tienen el mismo día y hora (${dup.dia} a las ${dup.hora}). Cambiá el día o la hora de uno para que no se publiquen juntos.`);
@@ -557,7 +610,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           const res = await fetch("/api/servicios/publicaciones/renovacion-contenidos/configurar", {
             method: "POST", credentials: "same-origin", cache: "no-store",
             headers: { "Content-Type": "application/json", "X-Comunidad-Panel": "1" },
-            body: JSON.stringify({ id: pedidoRenovacion.id, zonaHoraria, publicaciones }),
+            body: JSON.stringify({ id: pedidoRenovacion.id, zonaHoraria, publicaciones, historias: historias.filter(h => h.archivos.length > 0).map(h => ({ id: h.id, tipo: h.tipo, dia: h.dia, hora: h.hora, llevaEnlace: h.llevaEnlace, textoEnlace: h.textoEnlace, archivosSeleccionados: h.archivos.map(a => ({ nombre: a.name, tipo: a.type, tamano: a.size })) })) }),
           });
           const info = await res.json().catch(() => ({}));
           if (!res.ok || info.ok !== true || info.estado !== "en_preparacion") throw new Error(info.error || "No se pudo guardar la semana 2.");
@@ -614,6 +667,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             method: "POST", credentials: "same-origin", cache: "no-store",
             headers: { "Content-Type": "application/json", "X-Comunidad-Panel": "1" },
             body: JSON.stringify({ planId: "comunidad-semanal", moneda: "ARS", redes,
+              historias: historias.filter(h => h.archivos.length > 0).map(h => ({ id: h.id, tipo: h.tipo, dia: h.dia, hora: h.hora, llevaEnlace: h.llevaEnlace, textoEnlace: h.textoEnlace, archivosSeleccionados: h.archivos.map(a => ({ nombre: a.name, tipo: a.type, tamano: a.size })) })),
               zonaHoraria, negocio: { nombre, contacto: perfil.nombreApellido, email,
                 whatsapp: perfil.whatsapp, url: perfil.web || "", rubro: "", publico: "", tono: "cercano" },
               publicaciones }),
@@ -625,7 +679,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           id = datos.pedidoId;
           setPedidoCreado(id);
         }
-        await subirArchivosSemana(id, contenidos, setSubida, senal);
+        await subirArchivosSemana(id, contenidos, setSubida, senal, historias);
       }
       alFinalizar();
     } catch (error) {
@@ -848,7 +902,9 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             </div>
             <div className="overflow-hidden rounded-sm border border-borde bg-white">
               <div className="flex items-center gap-2 px-3 py-3">
-                <LogoRed red={redPrevia} size={27} />
+                {logoVistaPrevia
+                  ? <img src={logoVistaPrevia} alt="Logo del emprendimiento" className="h-7 w-7 shrink-0 rounded-full border border-borde object-cover" />
+                  : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-azul text-xs font-medium text-white">{(nombreVisible || "T").trim().charAt(0).toUpperCase()}</span>}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-tinta">{redPrevia === "instagram" ? usuarioVisible : nombreVisible}</p>
                   <p className="text-[11px] font-normal text-tinta-apagado">{redPrevia === "instagram" ? "Publicación de Instagram" : "Página de Facebook · Público"}</p>
@@ -887,6 +943,62 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
 
     <details open className={`${CARD} group`}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
+        Historias · 3 por semana (opcional) <ChevronDown size={14} className="transition group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 border-t border-borde p-4 text-xs">
+        <p className="leading-5 text-tinta">Las historias son aparte de los 4 contenidos del feed. Podés usar el mismo día para todas, pero no el mismo día y horario. Para maximizar visibilidad, te sugerimos programar una historia por día.</p>
+        <p className="leading-5 text-tinta">Si la historia lleva enlace o sticker, se publica con notificación: te avisamos por email y en el panel a la hora programada para que la publiques a mano desde Instagram. Si no lleva, se publica sola.</p>
+        <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+          <div className="space-y-3">
+            <div className="flex gap-2" role="group" aria-label="Elegir historia">
+              {historias.map((h, i) => <button key={h.id} type="button" onClick={() => setHistoriaSeleccionada(i)} className={`flex-1 rounded-sm border px-2 py-2 text-xs font-medium ${historiaSeleccionada === i ? "border-azul bg-azul-suave text-azul" : "border-borde text-tinta-suave"}`}>Historia {i + 1} {h.archivos.length ? "✓" : ""}</button>)}
+            </div>
+            {(() => { const h = historias[historiaSeleccionada]; return <div className="space-y-3">
+              <div className="flex gap-2">
+                <button type="button" onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "imagen", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "imagen" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Imagen 9:16</button>
+                <button type="button" onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "reel", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "reel" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Video 9:16 · hasta 60 seg</button>
+              </div>
+              <label className="block cursor-pointer rounded-sm border border-dashed border-borde bg-crema px-3 py-3 text-center text-tinta">Subir {h.tipo === "reel" ? "video MP4" : "imagen"}<input type="file" accept={h.tipo === "reel" ? "video/mp4" : "image/jpeg,image/png,image/webp"} className="hidden" onChange={e => elegirArchivoHistoria(historiaSeleccionada, e)} /></label>
+              {h.archivos[0] && <p className="truncate">Archivo: {h.archivos[0].name}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <label>Día<select className={CAMPO} value={h.dia} onChange={e => actualizarHistoria(historiaSeleccionada, { dia: e.target.value })}>{diasEnOrdenCronologico(zonaHoraria, baseSemana).map(d => <option key={d} value={d}>{etiquetaDiaConFecha(d, zonaHoraria, baseSemana)}</option>)}</select></label>
+                <label>Hora<select className={CAMPO} value={h.hora} onChange={e => actualizarHistoria(historiaSeleccionada, { hora: e.target.value })}>{HORAS_SEMANA.map(hh => <option key={hh} value={hh}>{a12h(hh)}</option>)}</select></label>
+              </div>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={h.llevaEnlace} onChange={e => actualizarHistoria(historiaSeleccionada, { llevaEnlace: e.target.checked })} /> ¿Esta historia lleva enlace o sticker?</label>
+              {h.llevaEnlace && <div><p className="mb-1 text-amber-700">Va con notificación: te avisamos por email y en el panel para que la publiques a mano.</p><input className={CAMPO} value={h.textoEnlace} onChange={e => actualizarHistoria(historiaSeleccionada, { textoEnlace: e.target.value })} placeholder="¿Qué sticker o enlace agregás a mano? Ej: link a la promo" /></div>}
+              {!h.llevaEnlace && h.archivos.length > 0 && <p className="text-emerald-700">Sin enlace: se publica sola a la hora programada.</p>}
+            </div>; })()}
+            {errorHistoria && <p role="alert" className="text-red-700">{errorHistoria}</p>}
+            {duplicadoHistoria() && <p role="alert" className="text-amber-700">La historia {duplicadoHistoria().primero} y la historia {duplicadoHistoria().segundo} tienen el mismo día y hora. Cambiá una.</p>}
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] text-tinta-apagado">Vista previa · Historia {historiaSeleccionada + 1}</p>
+            <div className="relative mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-lg bg-black text-white">
+              {historias[historiaSeleccionada].archivos[0]
+                ? <VistaArchivoLocal archivo={historias[historiaSeleccionada].archivos[0]} tipo={historias[historiaSeleccionada].tipo} />
+                : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-white/70">Subí una imagen o video 9:16 para ver tu historia</div>}
+              <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/60 to-transparent" />
+              <div className="absolute inset-x-0 top-2 flex items-center gap-2 px-3">
+                <div className="h-0.5 flex-1 rounded bg-white/40"><div className="h-0.5 w-1/3 rounded bg-white" /></div>
+              </div>
+              <div className="absolute inset-x-0 top-4 flex items-center gap-2 px-3">
+                {logoVistaPrevia ? <img src={logoVistaPrevia} alt="" className="h-7 w-7 rounded-full border border-white/50 object-cover" /> : <span className="flex h-7 w-7 items-center justify-center rounded-full bg-azul text-xs font-medium">{(nombreVisible || "T").trim().charAt(0).toUpperCase()}</span>}
+                <span className="truncate text-xs font-medium">{usuarioVisible}</span>
+                <span className="text-[11px] text-white/70">Hace 2 hs</span>
+                <span className="ml-auto text-base leading-none">···</span>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/60 to-transparent px-3 pb-3 pt-6">
+                <span className="flex-1 rounded-full border border-white/50 px-3 py-2 text-xs text-white/80">Enviar mensaje</span>
+                <Heart size={20} /><Send size={20} />
+              </div>
+              {historias[historiaSeleccionada].llevaEnlace && <span className="absolute left-3 top-16 rounded-sm bg-amber-400 px-2 py-1 text-[11px] font-medium text-black">Con notificación · Enlace / sticker a mano</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+    <details open className={`${CARD} group`}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium [&::-webkit-details-marker]:hidden">
         Resumen y programación <ChevronDown size={14} className="transition group-open:rotate-180" />
       </summary>
       <div className="space-y-3 border-t border-borde p-4 text-xs">
@@ -895,6 +1007,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
           <p>Contenido {i + 1} · {(TIPOS_EDITOR[c.tipo] || TIPOS_EDITOR.imagen).titulo}</p>
           <p className="text-tinta-apagado">{etiquetaDiaConFecha(c.dia, zonaHoraria, baseSemana)} · {a12h(c.hora)}</p>
         </div>)}
+        {historias.filter(h => h.archivos.length > 0).length > 0 && <div className="pt-1"><p className="font-medium">Historias · {historias.filter(h => h.archivos.length > 0).length} de 3</p>{historias.filter(h => h.archivos.length > 0).map((h, i) => <p key={h.id} className="mt-0.5 text-tinta-apagado">Historia {i + 1} · {h.tipo === "reel" ? "Video" : "Imagen"} 9:16 · {h.dia ? etiquetaDiaConFecha(h.dia, zonaHoraria, baseSemana) : "Sin día"} · {h.hora ? a12h(h.hora) : "Sin hora"} · {h.llevaEnlace ? "Con notificación" : "Automática"}{h.llevaEnlace && h.textoEnlace ? ` · ${h.textoEnlace}` : ""}</p>)}</div>}
         {subidaInterrumpida && <p role="alert" className="rounded-sm bg-amber-50 p-2 text-amber-900">La subida anterior se interrumpió. Empezá de cero: volvé a elegir los archivos de los cuatro contenidos.</p>}
         {(() => { const dup = duplicadoDiaHora(); return dup ? <p role="alert" className="text-amber-700">Ojo: el contenido {dup.primero} y el contenido {dup.segundo} tienen el mismo día y hora ({dup.dia} a las {dup.hora}). Cambiá uno antes de enviar.</p> : null; })()}
         {errorEditor && <p role="alert" className="text-red-700">{errorEditor}</p>}
@@ -923,7 +1036,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             </div>
           </div>
         )}
-        <p className="text-[11px] text-tinta-apagado">{modoRenovacion
+        <p className="text-[11px] text-tinta">{modoRenovacion
           ? "Si tus archivos ya quedaron cargados, podés finalizar el envío anterior sin seleccionarlos otra vez."
           : "El pedido queda pendiente de revisión. Los 7 días de prueba comienzan luego de la aprobación."}</p>
       </div>
@@ -1206,6 +1319,20 @@ function PanelClientePublicaciones() {
   const [medioSemanal, setMedioSemanal] = useState({});
   const [archivosAbiertos, setArchivosAbiertos] = useState({});
   const [renovacionReal, setRenovacionReal] = useState(null);
+  const [logoEmprendimiento, setLogoEmprendimiento] = useState(() => { try { return localStorage.getItem("logo-emprendimiento") || ""; } catch { return ""; } });
+  const [errorLogo, setErrorLogo] = useState("");
+  const subirLogo = (evento) => {
+    const archivo = evento.target.files?.[0];
+    evento.target.value = "";
+    if (!archivo) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(archivo.type)) { setErrorLogo("Subí un logo JPG, PNG o WebP."); return; }
+    if (archivo.size > 2 * 1024 * 1024) { setErrorLogo("El logo tiene que pesar hasta 2 MB."); return; }
+    const lector = new FileReader();
+    lector.onload = () => { const url = String(lector.result || ""); try { localStorage.setItem("logo-emprendimiento", url); } catch {} setLogoEmprendimiento(url); setErrorLogo(""); try { window.dispatchEvent(new Event("logo-emprendimiento-cambio")); } catch {} };
+    lector.readAsDataURL(archivo);
+  };
+  const quitarLogo = () => { try { localStorage.removeItem("logo-emprendimiento"); } catch {} setLogoEmprendimiento(""); setErrorLogo(""); try { window.dispatchEvent(new Event("logo-emprendimiento-cambio")); } catch {} };
+
 
 
   const cargarPanel = useCallback(async () => {
@@ -1566,10 +1693,10 @@ function fechaLocal(valor, zonaHoraria) {
   const d = new Date(valor);
   if (!Number.isFinite(d.getTime())) return "Por confirmar";
   try { return new Intl.DateTimeFormat("es-AR", {
-    day:"numeric", month:"short", hour:"2-digit", minute:"2-digit",
+    day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", hour12: false,
     ...(zonaHoraria ? { timeZone:zonaHoraria } : {}),
-  }).format(d); }
-  catch { return new Intl.DateTimeFormat("es-AR", {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(d); }
+  }).format(d) + " hs"; }
+  catch { return new Intl.DateTimeFormat("es-AR", {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",hour12:false}).format(d) + " hs"; }
 }
 function enlacePublicado(contenido, red) {
   // Cada red utiliza exclusivamente su enlace confirmado: un enlace general
@@ -1594,8 +1721,7 @@ function urlWebSegura(valor) {
 function horaLocalEn12Horas(hora) {
   const partes = /^(\d{2}):([0-5]\d)$/.exec(hora || "");
   if (!partes) return "Hora por confirmar";
-  const h = Number(partes[1]);
-  return `${h % 12 || 12}:${partes[2]} ${h < 12 ? "a. m." : "p. m."}`;
+  return `${partes[1]}:${partes[2]} hs`; // 24 horas
 }
 function nombreTipo(tipo) { return tipo === "reel" ? "Reel" : tipo === "carrusel" ? "Carrusel" : "Imagen"; }
 function fechaContenido(c, zona) {
@@ -1603,9 +1729,9 @@ function fechaContenido(c, zona) {
   if (definitiva && Number.isFinite(Date.parse(definitiva))) {
     try {
       return new Intl.DateTimeFormat("es-AR", {
-        weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true,
+        weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
         ...(zona ? { timeZone: zona } : {}),
-      }).format(new Date(definitiva));
+      }).format(new Date(definitiva)) + " hs";
     } catch { /* Mantener el horario elegido aunque la zona sea inválida. */ }
   }
   // El cliente ya eligió un día y una hora. No inventar un número de día
@@ -1628,8 +1754,13 @@ function infoPersonal(datos, pedido) {
   };
 }
   const pedidos = Array.isArray(datos?.pedidos) ? datos.pedidos : [];
-  const pedidoConPendientes = pedidos.find(x => ["pendiente_carga", "en_preparacion", "correccion_solicitada"].includes(x.estadoContenidos));
+  const pedidoConPendientes = pedidos.find(x => ["pendiente_carga", "en_preparacion", "correccion_solicitada", "en_revision", "pendiente_revision", "pendiente_aprobacion", "en_preparacion_archivos"].includes(x.estadoContenidos) && (!solicitudes[x.pedidoId] || (solicitudes[x.pedidoId]?.motivos || []).some(m => String(m).includes("Continuá con la carga"))));
   const pedidoPrincipal = pedidos[0];
+  useEffect(() => {
+    pedidos.forEach(ped => {
+      if (["pendiente_carga", "en_preparacion", "correccion_solicitada", "en_revision", "pendiente_revision", "pendiente_aprobacion"].includes(ped.estadoContenidos) && !solicitudes[ped.pedidoId] && !erroresSolicitud[ped.pedidoId]) consultarSolicitud(ped.pedidoId);
+    });
+  }, [pedidos]);
   const personal = infoPersonal({...datos,perfil:detallesPanel.perfil||datos?.perfil||datos?.usuario?.perfil}, pedidoPrincipal);
   return <main className="min-h-[76vh] bg-crema px-3 py-7 text-tinta sm:px-6 sm:py-9" style={{fontFamily: "Montserrat, system-ui, sans-serif",fontWeight:400}}>
     <RetornoPaypalRenovacion alActualizar={setRenovacionReal}/>
@@ -1686,6 +1817,20 @@ function infoPersonal(datos, pedido) {
             <CampoInfo etiqueta="Email confirmado" valor={datos.email || "—"}/>
             <CampoInfo etiqueta="Nombre y apellido" valor={personal.nombre}/>
             <CampoInfo etiqueta="Nombre emprendimiento" valor={personal.emprendimiento}/>
+            <div>
+              <p className="mb-1 text-xs font-medium">Logo del emprendimiento (opcional)</p>
+              <div className="flex items-center gap-3">
+                {logoEmprendimiento
+                  ? <img src={logoEmprendimiento} alt="Logo del emprendimiento" className="h-11 w-11 shrink-0 rounded-full border border-borde object-cover" />
+                  : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-azul text-base font-medium text-white">{(personal?.emprendimiento || "T").trim().charAt(0).toUpperCase()}</span>}
+                <div className="min-w-0">
+                  <label className="inline-block cursor-pointer rounded-sm border border-borde bg-white px-2.5 py-1.5 text-xs font-medium text-tinta">Subir logo<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={subirLogo} /></label>
+                  {logoEmprendimiento && <button type="button" onClick={quitarLogo} className="ml-2 rounded-sm border border-borde bg-white px-2.5 py-1.5 text-xs font-medium text-tinta">Quitar</button>}
+                  <p className="mt-1 text-[11px] leading-4 text-tinta-apagado">El logo se verá en la vista previa del feed e historias.</p>
+                  {errorLogo && <p role="alert" className="mt-1 text-[11px] text-red-700">{errorLogo}</p>}
+                </div>
+              </div>
+            </div>
             <CampoInfo etiqueta="WhatsApp" valor={personal.whatsapp}/>
             <CampoInfo etiqueta="País" valor={personal.pais}/>
             {urlWebSegura(personal.web) && <CampoInfo etiqueta="Web o enlace principal" valor={<a className="text-azul underline underline-offset-2" href={urlWebSegura(personal.web)} rel="noopener noreferrer" target="_blank">{personal.web}</a>}/>}
@@ -1723,16 +1868,20 @@ function infoPersonal(datos, pedido) {
           const ig = detalle?.cuentas?.instagram || instagramPorPedido[p.pedidoId];
           const facebook = detalle?.cuentas?.facebook !== undefined ? detalle.cuentas.facebook : p.facebook;
           const cuentasConectadas = redes.length > 0 && redes.every(red => red === "facebook" ? Boolean(facebook) : Boolean(ig));
-          const contenidosVistos = detalle?.contenidos?.length ? contenidos.map(c=>({...c,...(detalle.contenidos.find(v=>v.id===c.id)||{})})) : contenidos;
+          const contenidosVistos = detalle?.contenidos?.length ? detalle.contenidos : contenidos;
           const solicitud = solicitudes[p.pedidoId];
           const pruebaActiva = tieneEstadoActivo(p);
           const autorizacionLista = p.modalidad !== "prueba_gratuita" || pruebaActiva || Boolean(solicitud?.vigente && !solicitud?.requiereNuevaConfirmacion);
           const prueba = detalle?.prueba || p.prueba;
-          const publicados = contenidosVistos.reduce((s, c) => s + redes.filter(red =>
-            c.publicadoEn?.includes?.(red) || c.estadoPorRed?.[red] === "publicado").length, 0);
-          const programados = contenidosVistos.reduce((s, c) => s + redes.filter(red =>
-            ["programado", "publicado"].includes(c.estadoPorRed?.[red] || c.estado)).length, 0);
-          const total = redes.length * Math.max(contenidos.length, 4);
+          const publicados = contenidosVistos.reduce((s, c) => s + redes.filter(red => {
+            if (String(c.id||'').startsWith('historia-') && red !== 'instagram') return false;
+            return c.publicadoEn?.includes?.(red) || c.estadoPorRed?.[red] === "publicado";
+          }).length, 0);
+          const programados = contenidosVistos.reduce((s, c) => s + redes.filter(red => {
+            if (String(c.id||'').startsWith('historia-') && red !== 'instagram') return false;
+            return ["programado", "publicado"].includes(c.estadoPorRed?.[red] || c.estado);
+          }).length, 0);
+          const total = redes.length * 4 + contenidosVistos.filter(c => String(c.id||'').startsWith('historia-')).length;
           const programacionConfirmada = total > 0 && programados === total &&
             contenidosVistos.every(c => [c.fechaHoraDefinitiva, c.fechaProgramada, c.programadoPara]
               .some(valor => valor && Number.isFinite(Date.parse(valor))));
@@ -1743,7 +1892,7 @@ function infoPersonal(datos, pedido) {
           // Ahora los dos dependen de la misma variable: si cualquiera de los dos dice que hay corrección,
           // aparecen los dos juntos, sin recargar y sin confusión.
           const hayCorreccion = archivosPorCorregir || Boolean(solicitud?.motivos?.some(m => String(m).toLowerCase().includes("correcci")));
-          const archivosIncompletos = ["pendiente_carga", "en_preparacion"].includes(p.estadoContenidos);
+          const archivosIncompletos = ["pendiente_carga", "en_preparacion", "en_revision", "pendiente_revision", "pendiente_aprobacion", "correccion_solicitada", "en_preparacion_archivos"].includes(p.estadoContenidos) && (!solicitudes[p.pedidoId] || (solicitudes[p.pedidoId]?.motivos || []).some(m => String(m).includes("Continuá con la carga")));
           return <article key={p.pedidoId} className="space-y-5">
             <details className={`${CARD} group`} aria-label="Cuentas">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden"><span className="flex items-center gap-2"><Globe size={16} className="text-azul"/><span className="text-sm font-medium">Cuentas</span></span><ChevronDown size={13} className="transition group-open:rotate-180"/></summary>
@@ -1784,7 +1933,6 @@ function infoPersonal(datos, pedido) {
                   <div className="min-w-0"><p className="text-xs font-medium text-tinta">Threads</p>
                     <p className="text-[11px] text-tinta-apagado">Próximamente</p></div>
                 </div>
-                <span className="text-[11px] text-tinta-apagado">Próximamente</span>
               </div>
               {instagramError && redes.includes("instagram") && <p className="mt-2 text-[11px] text-amber-700">Estado de Instagram temporalmente no disponible: {instagramError}</p>}
               </div>
@@ -1822,7 +1970,7 @@ function infoPersonal(datos, pedido) {
               <div className="border-t border-borde p-4 sm:p-5">
               {redes.map(red => <div key={red} className="mb-4 last:mb-0">
                 <div className="mb-2 flex items-center gap-2 border-b border-borde pb-2"><LogoRed red={red} size={18}/><h3 className="text-xs font-medium">{redLabel(red)}</h3></div>
-                <div className="space-y-1">{contenidosVistos.length ? contenidosVistos.map((c, i) => {
+                <div className="space-y-1">{contenidosVistos.length ? contenidosVistos.filter(c => red !== 'facebook' || !String(c.id||'').startsWith('historia-')).map((c, i) => {
                   const url = enlacePublicado(c, red);
                   const estadoPorRed = c.estadoPorRed?.[red] || c.estado;
                   const sinFecha = ![c.fechaHoraDefinitiva, c.fechaProgramada, c.programadoPara]
@@ -1832,7 +1980,7 @@ function infoPersonal(datos, pedido) {
                     : sinFecha ? "Por confirmar" : undefined;
                   return <div key={`${red}:${c.id || i}`} className="flex flex-wrap items-center justify-between gap-3 border-b border-borde py-3 last:border-b-0 text-xs">
                     <div className="min-w-0 space-y-1">
-                      <p className="font-medium text-tinta">Contenido {i+1} · {nombreTipo(c.tipo)}</p>
+                      <p className="font-medium text-tinta">{String(c.id||'').startsWith('historia-') ? `Historia ${String(c.id).replace('historia-','')} · ${nombreTipo(c.tipo)}` : `Contenido ${contenidosVistos.filter(x => !String(x.id||'').startsWith('historia-')).findIndex(x => x.id===c.id)+1} · ${nombreTipo(c.tipo)}`}</p>
                       <p className="text-[11px] text-tinta-apagado">{fechaContenido(c, detalle?.zonaHoraria)}</p>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -1851,6 +1999,7 @@ function infoPersonal(datos, pedido) {
                     </div>
                   </div>;
                 }) : <p className="py-2 text-xs text-tinta-apagado">Todavía no hay contenidos cargados.</p>}</div>
+                {Array.isArray(p.historias) && p.historias.length > 0 && <div className="mt-3 space-y-1"><p className="text-xs font-medium">Historias · {p.historias.length} de 3</p>{p.historias.map((h, i) => <div key={h.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-borde py-3 last:border-b-0 text-xs"><div className="min-w-0 space-y-1"><p className="font-medium text-tinta">Historia {i + 1} · {h.tipo === "reel" ? "Video" : "Imagen"} 9:16</p><p className="text-[11px] text-tinta-apagado">{fechaContenido(h, detalle?.zonaHoraria)} · {h.llevaEnlace || h.modo === "con_notificacion" ? "Con notificación" : "Automática"}{h.textoEnlace ? ` · ${h.textoEnlace}` : ""}</p></div><Etiqueta valor={h.estado} texto={h.estado === "publicado" ? undefined : "Por confirmar"} /></div>)}</div>}
               </div>)}
                 
               {/* La autorización sigue siendo explícita cuando el servidor la exige.

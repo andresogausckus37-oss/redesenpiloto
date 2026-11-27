@@ -47,11 +47,23 @@ function configValida(data,doc){
     }
     publicaciones.push({id:x.id,tipo:x.tipo,formato:x.formato,diaPreferido:x.dia,horaLocalPreferida:x.hora,descripcion:x.descripcion,ctaInstagram:x.ctaInstagram,ctaFacebook:x.ctaFacebook,urlFacebook:x.urlFacebook,hashtags:x.hashtags,archivosSeleccionados:archivos});
   }
-  return {zonaHoraria:data.zonaHoraria,redes:doc.redes,publicaciones};
+  const crudas=data.historias||[];
+  if(!Array.isArray(crudas)||crudas.length>3)return null;
+  const pares=new Set(); const historias=[];
+  for(let i=0;i<crudas.length;i++){
+    const h=crudas[i];
+    if(!h||h.id!==`historia-${i+1}`||!['imagen','reel'].includes(h.tipo)||!dias.includes(h.dia)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(h.hora||'')||typeof h.llevaEnlace!=='boolean'||typeof (h.textoEnlace||'')!=='string'||(h.textoEnlace||'').length>500||(h.llevaEnlace&&!(h.textoEnlace||''))||!Array.isArray(h.archivosSeleccionados)||h.archivosSeleccionados.length!==1)return null;
+    const par=`${h.dia}:${h.hora}`; if(pares.has(par))return null; pares.add(par);
+    const a=h.archivosSeleccionados[0];
+    const permitidos=h.tipo==='reel'?['video/mp4']:['image/jpeg','image/png','image/webp'];
+    if(!a||typeof a.nombre!=='string'||a.nombre.length>150||!permitidos.includes(a.tipo)||!Number.isSafeInteger(a.tamano)||a.tamano<100||a.tamano>MAX)return null;
+    historias.push({id:h.id,tipo:h.tipo,formato:'9:16',diaPreferido:h.dia,horaLocalPreferida:h.hora,llevaEnlace:h.llevaEnlace,textoEnlace:h.textoEnlace||'',modo:h.llevaEnlace?'con_notificacion':'automatica',archivosSeleccionados:[{nombre:a.nombre,tipo:a.tipo,tamano:a.tamano}],estado:'pendiente_preparacion'});
+  }
+  return {zonaHoraria:data.zonaHoraria,redes:doc.redes,publicaciones,historias};
 }
 async function leerArchivo(req,max){if(Number(req.headers.get('content-length')||0)>max||!req.body)return null;let n=0;const partes=[],lector=req.body.getReader();while(true){const {done,value}=await lector.read();if(done)break;n+=value.byteLength;if(n>max){await lector.cancel().catch(()=>{});return null;}partes.push(value);}if(n<100)return null;const b=new Uint8Array(n);let o=0;for(const p of partes){b.set(p,o);o+=p.length;}return b;}
 function mime(b){if(b[0]===255&&b[1]===216&&b[2]===255)return 'image/jpeg';if([137,80,78,71,13,10,26,10].every((v,i)=>b[i]===v))return 'image/png';if([82,73,70,70].every((v,i)=>b[i]===v)&&[87,69,66,80].every((v,i)=>b[i+8]===v))return 'image/webp';if([102,116,121,112].every((v,i)=>b[i+4]===v))return 'video/mp4';return null;}
-async function completos(db,doc){const ps=doc.configuracion?.publicaciones;if(!Array.isArray(ps)||ps.length!==4)return false;const recibidos=await db.collection(MEDIOS).find({renovacionId:doc._id}).toArray();const n=ps.reduce((s,p)=>s+p.archivosSeleccionados.length,0);if(n!==recibidos.length)return false;return ps.every(p=>p.archivosSeleccionados.every((a,i)=>recibidos.some(m=>m.contenidoId===p.id&&m.posicion===i&&m.nombre===a.nombre&&m.tipo===a.tipo&&m.tamano===a.tamano&&m.r2Key)));}
+async function completos(db,doc){const ps=doc.configuracion?.publicaciones;if(!Array.isArray(ps)||ps.length!==4)return false;const hs=doc.configuracion?.historias||[];const recibidos=await db.collection(MEDIOS).find({renovacionId:doc._id}).toArray();const n=ps.reduce((s,p)=>s+p.archivosSeleccionados.length,0)+hs.reduce((s,h)=>s+h.archivosSeleccionados.length,0);if(n!==recibidos.length)return false;return [...ps,...hs].every(p=>p.archivosSeleccionados.every((a,i)=>recibidos.some(m=>m.contenidoId===p.id&&m.posicion===i&&m.nombre===a.nombre&&m.tipo===a.tipo&&m.tamano===a.tamano&&m.r2Key)));}
 export async function ejecutarContenidosRenovacionReal(req,env){
   const url=new URL(req.url),ruta=url.pathname;
   if(![BASE+'/configurar',BASE+'/medio',BASE+'/enviar'].includes(ruta))return json({ok:false,error:'Ruta no encontrada.'},404);
@@ -68,7 +80,7 @@ export async function ejecutarContenidosRenovacionReal(req,env){
     if(!doc)return json({ok:false,error:'La semana todavía no fue activada por Administración.'},409);
     if(ruta===BASE+'/configurar'){
       if(![null,undefined,'sin_configurar','en_preparacion'].includes(doc.configuracionEstado))return json({ok:false,error:'Los contenidos ya fueron enviados a revisión.'},409);
-      const config=configValida(info,doc);if(!config)return json({ok:false,error:'Revisá los cuatro contenidos, horarios y archivos (videos hasta 100 MB, imágenes hasta 20 MB).'},400);
+      const config=configValida(info,doc);if(!config)return json({ok:false,error:'Revisá los cuatro contenidos, las historias, horarios y archivos (videos hasta 100 MB, imágenes hasta 20 MB).'},400);
       const existentes=await medios.countDocuments({renovacionId:id});
       if(existentes&&JSON.stringify(config)!==JSON.stringify(doc.configuracion))return json({ok:false,error:'Ya existen archivos cargados: conservá la configuración original del pedido.'},409);
       await tabla.updateOne({_id:id,clienteUsuarioId:usuario.id,estado:'activada',configuracionEstado:{$nin:['en_revision','aprobada']}},{$set:{configuracion:config,configuracionEstado:'en_preparacion',actualizadoEn:new Date()}});
@@ -77,7 +89,7 @@ export async function ejecutarContenidosRenovacionReal(req,env){
     if(!doc.configuracion||doc.configuracionEstado!=='en_preparacion')return json({ok:false,error:'Primero guardá la programación.'},409);
     if(ruta===BASE+'/medio'){
       const contenido=url.searchParams.get('contenido')||'',pos=Number(url.searchParams.get('pos'));
-      const pub=doc.configuracion.publicaciones.find(p=>p.id===contenido);
+      const pub=[...doc.configuracion.publicaciones,...(doc.configuracion.historias||[])].find(p=>p.id===contenido);
       const esperado=Number.isInteger(pos)&&pos>=0?pub?.archivosSeleccionados[pos]:null;
       if(!esperado)return json({ok:false,error:'Archivo no incluido en la programación.'},400);
       const clave=`${id}:${contenido}:${pos}`;

@@ -12,13 +12,14 @@ const CABECERAS_PANEL = { "X-Comunidad-Panel": "1" };
 // Si una subida falla, la semana sigue guardada y el cliente puede reintentar desde el panel.
 // Semana 1: reanuda desde los archivos CONFIRMADOS en MongoDB/R2.
 // Dos archivos simultáneos como máximo. Nunca crea un segundo pedido.
-export async function subirArchivosSemana(pedidoId, contenidos, progreso = () => {}, signal) {
+export async function subirArchivosSemana(pedidoId, contenidos, progreso = () => {}, signal, historias = []) {
   const solicitar = async (ruta, datos) => leer(await fetch(`${API}/${ruta}`, {
     method: "POST", credentials: "same-origin", cache: "no-store", signal,
     headers: { ...CABECERAS_PANEL, "Content-Type": "application/json" },
     body: JSON.stringify(datos),
   }));
-  const archivos = contenidos.flatMap(contenido =>
+  const todos = [...contenidos, ...historias.filter(h => h.archivos?.length)];
+  const archivos = todos.flatMap(contenido =>
     contenido.archivos.map((archivo, posicion) => ({ contenido, archivo, posicion })));
   if (!archivos.length) throw new Error("No hay archivos para enviar.");
 
@@ -60,6 +61,7 @@ export async function subirArchivosSemana(pedidoId, contenidos, progreso = () =>
   async function enviarUno(item) {
     const { contenido, archivo, posicion } = item;
     comprobarArchivo(archivo, contenido.tipo);
+    if (String(contenido.id || "").startsWith("historia-") && contenido.tipo === "reel") { const d = await new Promise(r => { const u = URL.createObjectURL(archivo); const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => { URL.revokeObjectURL(u); r(v.duration || 0); }; v.onerror = () => { URL.revokeObjectURL(u); r(0); }; v.src = u; }); if (d > 60) throw new Error("El video de historia no puede superar 60 segundos."); }
     const clave = `${contenido.id}:${posicion}`;
     let sesion;
     try {
@@ -222,11 +224,11 @@ export default function ArchivosPedido({ pedido }) {
   useEffect(() => {
     if (!id) return;
     const controller = new AbortController();
-    setCargando(true);
+    if (!datos) setCargando(true);
     const actualizar = () => fetch(`${API}/estado?pedidoId=${encodeURIComponent(id)}`, {
       method:"GET",credentials:"same-origin",cache:"no-store",headers,signal:controller.signal,
     }).then(leer).then(n => { if (!controller.signal.aborted) { setDatos(n); setError(""); } })
-      .catch(e => { if (!controller.signal.aborted) { setDatos(null); setError(e.message || "Error consultando contenidos."); } })
+      .catch(e => { if (!controller.signal.aborted) { if (!datos) setDatos(null); setError(e.message || "Error consultando contenidos."); } })
       .finally(() => { if (!controller.signal.aborted) setCargando(false); });
     actualizar();
     return () => controller.abort();
@@ -386,7 +388,7 @@ export default function ArchivosPedido({ pedido }) {
       )}
       
       {aviso && <p className="mt-3 text-xs text-emerald-700" role="status">{aviso}</p>}
-      <button type="button" disabled={procesando} onClick={recargar} className="mt-3 inline-flex items-center gap-2 rounded-sm border border-borde bg-white px-3 py-2 text-xs font-medium text-tinta-suave disabled:opacity-50"><RefreshCw size={14}/> Actualizar contenidos</button>
+      <button type="button" disabled={procesando || cargando} onClick={recargar} className="mt-3 inline-flex items-center gap-2 rounded-sm border border-borde bg-white px-3 py-2 text-xs font-medium text-tinta-suave disabled:opacity-50">{cargando ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-borde border-t-azul" /> : <RefreshCw size={14}/>} {cargando ? "Actualizando..." : "Actualizar contenidos"}</button>
     </>
   );
 }

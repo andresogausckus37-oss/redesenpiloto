@@ -80,10 +80,14 @@ const primerCivil = diaDesdeUTC(hoy.y, hoy.m, hoy.d, primerDelta);
 const inicioCivil = fechaLocalUTC(primerCivil.y, primerCivil.m, primerCivil.d, 0, 0, zona);
 const inicio = inicioCivil !== null ? inicioCivil : ahora.getTime();
   const fin = inicio + DIAS_REQUERIDOS * MS_DIA;
-  for (const [indice, p] of pedido.publicaciones.entries()) {
+  const itemsCalendario = [
+    ...pedido.publicaciones.map((p, i) => ({ ...p, etiqueta: `Contenido ${i + 1}`, numero: i + 1 })),
+    ...(Array.isArray(pedido.historias) ? pedido.historias : []).map((h, i) => ({ ...h, etiqueta: `Historia ${i + 1}`, numero: `Historia ${i + 1}`, soloAviso: h?.modo === "con_notificacion" || !!h?.llevaEnlace })),
+  ];
+  for (const [indice, p] of itemsCalendario.entries()) {
     const hora = /^(\d{2}):(\d{2})$/.exec(p.horaLocalPreferida || "");
     if (!hora || !DIAS.includes(p.diaPreferido) || Number(hora[1]) > 23 || Number(hora[2]) > 59) {
-      advertencias.push(`El contenido ${indice + 1} tiene un día u horario incorrecto.`);
+      advertencias.push(`${p.etiqueta} tiene un día u horario incorrecto.`);
       continue;
     }
     let previsto = null;
@@ -99,13 +103,14 @@ const inicio = inicioCivil !== null ? inicioCivil : ahora.getTime();
       }
     }
     if (!previsto) {
-      advertencias.push(`No se encontró un horario válido para el contenido ${indice + 1} en los próximos 7 días.`);
+      advertencias.push(`No se encontró un horario válido para ${p.etiqueta} en los próximos 7 días.`);
       continue;
     }
-    for (const red of pedido.redes) {
-      items.push({ id: `${p.id}:${red}`, contenidoId: p.id, numeroContenido: indice + 1,
-        tipo: p.tipo, red, descripcion: String(p.descripcion || "").slice(0, 160),
-        ...previsto, estado: "simulado" });
+    const redesItem = String(p.id || "").startsWith("historia-") ? ["instagram"] : pedido.redes;
+    for (const red of redesItem) {
+      items.push({ id: `${p.id}:${red}`, contenidoId: p.id, numeroContenido: p.numero,
+        etiqueta: p.etiqueta, tipo: p.tipo, red, descripcion: String(p.descripcion || p.textoEnlace || "").slice(0, 160),
+        ...previsto, estado: "simulado", soloAviso: !!p.soloAviso });
     }
   }
   items.sort((a, b) => a.fechaHoraUTC.localeCompare(b.fechaHoraUTC) || a.id.localeCompare(b.id));
@@ -135,12 +140,13 @@ async function verificarCalendario(db, pedido, ahora = new Date()) {
   const calendario = calcularCalendarioSimulado(pedido, ahora);
   const archivos = await db.collection("archivos_servicios").find({ pedidoId, estado: "subido" })
     .project({ contenidoId: 1, posicion: 1, nombre: 1, tamano: 1, r2Key: 1, revision: 1, _id: 0 }).toArray();
-  const archivosAprobados = pedido.publicaciones.every(p => {
+  const todosItems = [...pedido.publicaciones, ...(Array.isArray(pedido.historias) ? pedido.historias : [])];
+  const archivosAprobados = todosItems.every(p => {
     const asociados = archivos.filter(a => a.contenidoId === p.id);
     return asociados.length >= (p.tipo === "carrusel" ? 2 : 1) &&
       asociados.length <= (p.tipo === "carrusel" ? 10 : 1) &&
       asociados.every(a => a.revision === "aprobado" && typeof a.r2Key === "string" && a.r2Key.length > 5);
-  }) && archivos.every(a => pedido.publicaciones.some(p => p.id === a.contenidoId));
+  }) && archivos.every(a => todosItems.some(p => p.id === a.contenidoId));
   const conexiones = await db.collection("conexiones_meta_pedidos").find({
     pedidoId, plataforma: { $in: pedido.redes }, estado: "conectada",
   }).project({ _id: 0, plataforma: 1, pageId: 1, instagramId: 1, actualizadoEn: 1,
@@ -163,7 +169,7 @@ async function verificarCalendario(db, pedido, ahora = new Date()) {
     redesConectadas, facebookInstagramMismaPagina: mismaPagina, tokensGuardados,
     sinTextosDePrueba: !textosDePrueba,
     horariosSinCoincidencias: !calendario.advertencias.some(a => a.includes("coinciden")),
-    todasFechasCalculadas: calendario.eventos.length === pedido.publicaciones.length * pedido.redes.length,
+    todasFechasCalculadas: calendario.eventos.length === pedido.publicaciones.length * pedido.redes.length + (Array.isArray(pedido.historias) ? pedido.historias.length : 0),
   };
   if (!condiciones.archivosAprobados) calendario.advertencias.push("Los cuatro contenidos deben estar aprobados técnicamente.");
   if (!redesConectadas) calendario.advertencias.push("Falta conectar alguna de las redes seleccionadas.");
@@ -178,7 +184,7 @@ async function verificarCalendario(db, pedido, ahora = new Date()) {
   // usuario vio. No incluye secretos cifrados ni devuelve datos privados.
   const revision = crypto.createHash("sha256").update(JSON.stringify({
     pedidoId, estadoContenidos: pedido.estadoContenidos, zona: pedido.zonaHoraria,
-    redes: pedido.redes, publicaciones: pedido.publicaciones,
+    redes: pedido.redes, publicaciones: pedido.publicaciones, historias: pedido.historias || [],
     archivos: archivos.map(a => ({ ...a })).sort((a,b) =>
       `${a.contenidoId}:${a.posicion}`.localeCompare(`${b.contenidoId}:${b.posicion}`)),
     conexiones: conexiones.map(c => ({ plataforma: c.plataforma, pageId: c.pageId,
@@ -279,9 +285,9 @@ export function construirEnsayoEjecucion(pedidoId, calendario) {
   const vistos = new Set();
   const ids = new Set();
   const eventos = calendario.eventos.map(evento => {
-    if (!/^contenido-[1-4]$/.test(evento.contenidoId || "") ||
+    if (!/^(contenido-[1-4]|historia-[1-3])$/.test(evento.contenidoId || "") ||
         !REDES.has(evento.red) || !["imagen", "reel", "carrusel"].includes(evento.tipo) ||
-        !/^contenido-[1-4]:(facebook|instagram)$/.test(evento.id || "") ||
+        !/^(contenido-[1-4]|historia-[1-3]):(facebook|instagram)$/.test(evento.id || "") ||
         evento.id !== `${evento.contenidoId}:${evento.red}` ||
         !Number.isFinite(Date.parse(evento.fechaHoraUTC || ""))) throw new Error("EVENTO_INVALIDO");
     const par = `${evento.contenidoId}:${evento.red}`;

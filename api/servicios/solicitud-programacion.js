@@ -105,12 +105,24 @@ export async function evaluarSolicitud(db, pedido) {
         motivos.push(`El contenido ${indice + 1} tiene una corrección pendiente.`);
       }
     }
+    const etiquetaFaltante = (x) => String(x).startsWith("historia") ? String(x) : `contenido ${x}`;
     if (faltantesArchivos.length) {
-      const lista = faltantesArchivos.length <= 1 ? `contenido ${faltantesArchivos[0]}` :
-        faltantesArchivos.slice(0, -1).map(n => `contenido ${n}`).join(", ") + " y " + `contenido ${faltantesArchivos[faltantesArchivos.length - 1]}`;
+      const lista = faltantesArchivos.length <= 1 ? etiquetaFaltante(faltantesArchivos[0]) :
+        faltantesArchivos.slice(0, -1).map(n => etiquetaFaltante(n)).join(", ") + " y " + etiquetaFaltante(faltantesArchivos[faltantesArchivos.length - 1]);
       motivos.push(`Continuá con la carga de los archivos del ${lista} para completar el envío`);
     }
-    if (archivos.some(f => !publicaciones.some(p => p.id === f.contenidoId))) {
+    const historias = Array.isArray(pedido.historias) ? pedido.historias : [];
+    const paresH = new Set();
+    for (const [indice, h] of historias.entries()) {
+      if (h?.id !== `historia-${indice + 1}` || !["imagen", "reel"].includes(h?.tipo) || !DIAS.has(h?.diaPreferido) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(h?.horaLocalPreferida || "")) motivos.push(`Revisá el día y horario de la historia ${indice + 1}.`);
+      const parH = `${h?.diaPreferido}:${h?.horaLocalPreferida}`;
+      if (paresH.has(parH)) motivos.push("Dos historias tienen el mismo día y horario.");
+      paresH.add(parH);
+      const asocH = archivos.filter(f => f.contenidoId === h?.id);
+      if (asocH.length !== 1 || asocH.some(f => typeof f.r2Key !== "string" || f.r2Key.length < 8)) faltantesArchivos.push(`historia ${indice + 1}`);
+      if (asocH.some(f => f.revision === "rechazado")) motivos.push(`La historia ${indice + 1} tiene una corrección pendiente.`);
+    }
+    if (archivos.some(f => !publicaciones.some(p => p.id === f.contenidoId) && !historias.some(h => h.id === f.contenidoId))) {
       motivos.push("Hay archivos que no corresponden a los cuatro contenidos.");
     }
   }
@@ -135,12 +147,12 @@ export async function evaluarSolicitud(db, pedido) {
       dia: p.diaPreferido, hora: p.horaLocalPreferida, descripcion: p.descripcion,
       ctaFacebook: p.ctaFacebook, ctaInstagram: p.ctaInstagram, urlFacebook: p.urlFacebook,
       hashtags: p.hashtags, archivosSeleccionados: p.archivos })),
-    archivos: normalizados.map(f => ({ contenidoId: f.contenidoId, posicion: f.posicion,
-      r2Key: f.r2Key, nombre: f.nombre, tamano: f.tamano })),
+    historias: (Array.isArray(pedido.historias) ? pedido.historias : []).map(h => ({ id: h.id, tipo: h.tipo, dia: h.diaPreferido, hora: h.horaLocalPreferida, llevaEnlace: h.llevaEnlace, textoEnlace: h.textoEnlace, modo: h.modo })),
+    archivos: normalizados.map(f => ({ contenidoId: f.contenidoId, posicion: f.posicion })),
     conexiones: conexiones.map(c => ({ plataforma: c.plataforma, pageId: String(c.pageId || ""),
       instagramId: String(c.instagramId || "") })).sort((a,b) => a.plataforma.localeCompare(b.plataforma)),
   })).digest("hex") : null;
-  return { lista, motivos, revision, aprobados, cantidadEventos: Array.isArray(redes) ? 4 * redes.length : 0,
+  return { lista, motivos, revision, aprobados, cantidadEventos: Array.isArray(redes) ? 4 * redes.length + (Array.isArray(pedido.historias) ? pedido.historias.length : 0) : 0,
     zonaHoraria: pedido.zonaHoraria, redes: Array.isArray(redes) ? redes : [] };
 }
 

@@ -410,8 +410,32 @@ function validarConfiguracionServicio(datos) {
     } catch(e) { console.error("VALIDAR debug error", e?.message); }
     return { error: "Revisá los datos de las cuatro publicaciones. Revisá el panel antes de crear otro pedido." };
   }
+  const historiasCrudas = datos.historias ?? [];
+  if (!Array.isArray(historiasCrudas) || historiasCrudas.length > 3) return { error: "Las historias son como máximo 3 por semana." };
+  const paresHistorias = new Set();
+  const historias = historiasCrudas.map((h, indice) => {
+    if (!h || typeof h !== "object" || Array.isArray(h) || h.id !== `historia-${indice + 1}` || !["imagen", "reel"].includes(h.tipo) || !DIAS_PUBLICACIONES.has(h.dia) || !HORAS_PUBLICACIONES.has(h.hora)) return null;
+    if (typeof h.llevaEnlace !== "boolean") return null;
+    const textoEnlace = textoServicio(h.textoEnlace ?? "", 500);
+    if (textoEnlace === null) return null;
+    if (h.llevaEnlace && !textoEnlace) return null;
+    const par = `${h.dia}:${h.hora}`;
+    if (paresHistorias.has(par)) return null;
+    paresHistorias.add(par);
+    const archivos = h.archivosSeleccionados ?? [];
+    if (!Array.isArray(archivos) || archivos.length !== 1) return null;
+    const a = archivos[0];
+    const nombre = textoServicio(a?.nombre, 180);
+    const tipo = textoServicio(a?.tipo, 80);
+    const limite = h.tipo === "reel" ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (!nombre || tipo === null || !Number.isSafeInteger(a?.tamano) || a.tamano <= 0 || a.tamano > limite) return null;
+    if (h.tipo === "reel" && tipo !== "video/mp4" && !/\.mp4$/i.test(nombre)) return null;
+    if (h.tipo !== "reel" && !["image/jpeg", "image/png", "image/webp", ""].includes(tipo) && !/\.(jpe?g|png|webp)$/i.test(nombre)) return null;
+    return { id: h.id, tipo: h.tipo, formato: "9:16", diaPreferido: h.dia, horaLocalPreferida: h.hora, llevaEnlace: h.llevaEnlace, textoEnlace, modo: h.llevaEnlace ? "con_notificacion" : "automatica", archivos: [{ nombre, tipo, tamano: a.tamano, estado: "pendiente_subida" }], fechaHoraDefinitiva: null, estado: "pendiente_preparacion" };
+  });
+  if (historias.some(h => !h)) return { error: "Revisá las historias: día, hora, archivo 9:16 y, si lleva enlace, el texto del enlace." };
   return { configuracion: {
-    redes: [...redes], zonaHoraria: datos.zonaHoraria, negocio, publicaciones,
+    redes: [...redes], zonaHoraria: datos.zonaHoraria, negocio, publicaciones, historias,
   } };
 }
 

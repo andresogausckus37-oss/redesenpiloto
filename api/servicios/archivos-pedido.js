@@ -36,7 +36,7 @@ async function pasoDiagnostico(fase, operacion) {
 }
 function lanzar(mensaje, status) { const e = new Error(mensaje); e.status = status; e.publico = mensaje; throw e; }
 function validarId(id) { return typeof id === "string" && VALID_ID.test(id); }
-function validarContenido(id) { return /^contenido-[1-4]$/.test(id || ""); }
+function validarContenido(id) { return /^contenido-[1-4]$/.test(id || "") || /^historia-[1-3]$/.test(id || ""); }
 function validarPosicion(v) { if (typeof v !== "string" && typeof v !== "number") return null; const n = Number(v); return Number.isInteger(n) && n >= 0 && n < 10 ? n : null; }
 function tiempo() { return new Date(); }
 function bucket(env) {
@@ -104,7 +104,9 @@ async function conDb(env, fn) {
   }
 }
 function publicacionesDelPedido(pedido) {
-  return pedido.publicaciones.map(p => ({ id: p.id, tipo: p.tipo, descripcion: String(p.descripcion || "").slice(0,1500), diaPreferido: p.diaPreferido, horaLocalPreferida: p.horaLocalPreferida }));
+  const base = pedido.publicaciones.map(p => ({ id: p.id, tipo: p.tipo, descripcion: String(p.descripcion || "").slice(0,1500), diaPreferido: p.diaPreferido, horaLocalPreferida: p.horaLocalPreferida }));
+  const historias = Array.isArray(pedido.historias) ? pedido.historias.map(h => ({ id: h.id, tipo: h.tipo, formato: "9:16", descripcion: String(h.textoEnlace || "").slice(0,500), diaPreferido: h.diaPreferido, horaLocalPreferida: h.horaLocalPreferida, llevaEnlace: h.llevaEnlace, modo: h.modo })) : [];
+  return [...base, ...historias];
 }
 async function leerJson(request) {
   if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") || "")) lanzar("Se requiere JSON.", 415);
@@ -162,7 +164,7 @@ async function actualizarEstado(db, pedidoId) {
 async function iniciar(request, env, db) {
   const input = await leerJson(request);
   const pedido = await buscarPedido(db, request, env, input.pedidoId, true);
-  const p = pedido.publicaciones.find(p => p.id === input.contenidoId);
+  const p = [...pedido.publicaciones, ...(Array.isArray(pedido.historias) ? pedido.historias : [])].find(p => p.id === input.contenidoId);
   const posicion = validarPosicion(input.posicion);
   if (!p || !validarContenido(input.contenidoId) || posicion === null || posicion >= maxPosiciones(p.tipo)) lanzar("Contenido o posición no válidos.", 400);
   const nombre = nombreSeguro(input.nombre);
@@ -466,10 +468,12 @@ export async function ejecutarAdminArchivosPedido(request, env, autorizado) {
           }
         } catch (e) { console.error("Autocorreccion estadoContenidos:", e?.message); }
         const revisable = preparacionAutorizada(pedido);
-        const publicaciones = Array.isArray(pedido.publicaciones) ? pedido.publicaciones : [];
+        const publicaciones = [...(Array.isArray(pedido.publicaciones) ? pedido.publicaciones : []), ...(Array.isArray(pedido.historias) ? pedido.historias.map(h => ({ ...h, descripcion: h.textoEnlace || "" })) : [])];
         const tarjetas = publicaciones.map((p, indice) => {
           const lista = archivos.filter(a => a.contenidoId === p.id);
-          return `<section><div class="seccion-cabecera"><h2>Contenido ${indice + 1} · ${escapar(p.tipo)}</h2><span class="chip">${lista.length} archivo${lista.length === 1 ? "" : "s"}</span></div><p class="muted">${escapar(p.diaPreferido || "Día sin definir")} · ${escapar(p.horaLocalPreferida || "Horario sin definir")} hora local</p><div class="copy">${escapar(p.descripcion || "Sin texto de publicación")}</div>${lista.length ? lista.map(a => {
+          const esHistoria = String(p.id || "").startsWith("historia-");
+          const titulo = esHistoria ? `Historia ${String(p.id).replace("historia-", "")} · ${escapar(p.tipo === "reel" ? "reel" : "imagen")}` : `Contenido ${indice + 1} · ${escapar(p.tipo)}`;
+          return `<section><div class="seccion-cabecera"><h2>${titulo}</h2><span class="chip">${lista.length} archivo${lista.length === 1 ? "" : "s"}</span></div><p class="muted">${escapar(p.diaPreferido || "Día sin definir")} · ${escapar(p.horaLocalPreferida || "Horario sin definir")} hora local</p><div class="copy">${String(p.id || "").startsWith("historia-") ? escapar(p.llevaEnlace || p.modo === "con_notificacion" ? `Con notificación · ${p.descripcion || "Enlace / sticker a mano"}` : "Automática · Se publica sola") : escapar(p.descripcion || "Sin texto de publicación")}</div>${lista.length ? lista.map(a => {
             const enlace = `${RUTA_ADMIN}?pedidoId=${encodeURIComponent(pedidoId)}&accion=ver&contenidoId=${encodeURIComponent(p.id)}&posicion=${a.posicion}`;
             const medio = a.tipo.startsWith("image/") ? `<img src="${escapar(enlace)}" alt="${escapar(a.nombre)}" loading="lazy">` : `<video src="${escapar(enlace)}" controls preload="none" playsinline></video>`;
             const csrf = tokenRevision(env, pedidoId, p.id, a.posicion);
