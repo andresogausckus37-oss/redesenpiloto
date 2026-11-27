@@ -109,7 +109,7 @@ export async function evaluarSolicitud(db, pedido) {
     if (faltantesArchivos.length) {
       const lista = faltantesArchivos.length <= 1 ? etiquetaFaltante(faltantesArchivos[0]) :
         faltantesArchivos.slice(0, -1).map(n => etiquetaFaltante(n)).join(", ") + " y " + etiquetaFaltante(faltantesArchivos[faltantesArchivos.length - 1]);
-      motivos.push(`Continuá con la carga de los archivos del ${lista} para completar el envío`);
+      motivos.push(`Continuá con la carga de todos los archivos pendientes para completar el envío`);
     }
     const historias = Array.isArray(pedido.historias) ? pedido.historias : [];
     const paresH = new Set();
