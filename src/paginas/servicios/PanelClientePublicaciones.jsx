@@ -236,15 +236,18 @@ const etiquetaDiaConFecha = (dia, zona, base = null) => {
 };
 // Días ordenados por próxima fecha real (hoy primero), no por Lunes-Domingo fijo.
 // Horarios disponibles para un día: si es hoy, solo los que tienen 4h o más de margen.
-const esDiaHoy = (dia, zona) => {
+const esDiaHoy = (dia, zona, base = null) => {
   try {
-    const fmtDia = new Intl.DateTimeFormat("es-AR", { weekday: "long", ...(zona ? { timeZone: zona } : {}) });
-    return fmtDia.format(new Date()).toLowerCase() === String(dia).toLowerCase();
+    const fechaReal = fechaParaDiaISO(dia, base);
+    if (!fechaReal) return false;
+    const hoy = partesEnZona(new Date(), zona || "America/Argentina/Buenos_Aires");
+    const f = partesEnZona(fechaReal, zona || "America/Argentina/Buenos_Aires");
+    return hoy.anio === f.anio && hoy.mes === f.mes && hoy.dia === f.dia;
   } catch { return false; }
 };
-const horasDisponiblesParaDia = (dia, zona) => {
+const horasDisponiblesParaDia = (dia, zona, base = null) => {
   try {
-    if (!esDiaHoy(dia, zona)) return HORAS_SEMANA;
+    if (!esDiaHoy(dia, zona, base)) return HORAS_SEMANA;
     const limite = Date.now() + 4 * 3600000;
     const disp = HORAS_SEMANA.filter(h => {
       const [hh, mm] = String(h).split(":").map(Number);
@@ -818,13 +821,13 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
                 </select>
               </label>
               <label className="text-xs font-medium">Día
-                <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => { const nuevoDia = e.target.value; const disp = horasDisponiblesParaDia(nuevoDia, zonaHoraria); actualizar({ dia: nuevoDia, hora: disp.includes(item.hora) ? item.hora : (disp[0] || item.hora) }); }}>
+                <select className={`mt-1 ${CAMPO}`} value={item.dia} disabled={sinEdicion} onChange={e => { const nuevoDia = e.target.value; const disp = horasDisponiblesParaDia(nuevoDia, zonaHoraria, baseSemana); actualizar({ dia: nuevoDia, hora: disp.includes(item.hora) ? item.hora : (disp[0] || item.hora) }); }}>
                   {diasEnOrdenCronologico(zonaHoraria, baseSemana).map(x => <option key={x} value={x} disabled={esDiaBloqueado(x)}>{etiquetaDiaConFecha(x, zonaHoraria, baseSemana)}</option>)}
                 </select>
               </label>
               <label className="text-xs font-medium">Horario local
                 <select className={`mt-1 ${CAMPO}`} value={item.hora} disabled={sinEdicion} onChange={e => actualizar({ hora: e.target.value })}>
-                  {horasDisponiblesParaDia(item.dia, zonaHoraria).map(x => <option key={x} value={x}>{a12h(x)}</option>)}
+                  {horasDisponiblesParaDia(item.dia, zonaHoraria, baseSemana).map(x => <option key={x} value={x}>{a12h(x)}</option>)}
                 </select>
                 
               </label>
