@@ -59,6 +59,8 @@ function resumen(p) {
   return p ? {id:p._id,pedidoId:p.pedidoId,redes:p.redes,importe:p.importe,moneda:p.moneda||'ARS',metodoPago:p.metodoPago||'transferencia',
     estado:p.estado,configuracionEstado:p.configuracionEstado||'sin_configurar',
     resumenContenidos:(p.configuracion?.publicaciones||[]).map((c,i)=>({numero:i+1,tipo:c.tipo,dia:c.diaPreferido,hora:c.horaLocalPreferida})),
+    resumenHistorias:(p.configuracion?.historias||[]).map((h,i)=>({numero:i+1,tipo:h.tipo,dia:h.diaPreferido,hora:h.horaLocalPreferida})),
+    resumenHistorias:(p.configuracion?.historias||[]).map((h,i)=>({numero:i+1,tipo:h.tipo,dia:h.diaPreferido,hora:h.horaLocalPreferida})),
     comprobanteRecibido:Boolean(p.comprobante),aprobadoEn:p.aprobadoEn||null,
     numeroSemana:p.numeroSemana||2,estadoSemana:p.estadoSemana||null,
     inicio:p.inicio||null,fin:p.fin||null,

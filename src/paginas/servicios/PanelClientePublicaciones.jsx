@@ -1871,7 +1871,7 @@ function infoPersonal(datos, pedido) {
               {configurando ? "Cerrar" : "Programá tu primera semana"} <ChevronDown size={13}/>
             </button>
           </section>
-          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tu pedido. Recibirás pronto un correo con la confirmación.");}} /></ErrorBoundaryEditor>}
+          {configurando && <ErrorBoundaryEditor onCerrar={() => setConfigurando(false)}><EditorPrimeraSemana perfil={detallesPanel?.perfil || datos?.perfil || {}} email={datos?.email || ""} alFinalizar={() => {try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurando(false); cargarPanel(); setMensaje("Estamos revisando tu pedido. Recibirás pronto un correo con la confirmación."); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}}} /></ErrorBoundaryEditor>}
         </> : pedidos.map((p) => {
           const redes = Array.isArray(p.redes) ? p.redes : [];
           const contenidos = Array.isArray(p.contenidos) ? p.contenidos : [];
@@ -2089,6 +2089,14 @@ function infoPersonal(datos, pedido) {
                           </div>
                         </div>;
                       })}
+                      {red === "instagram" && Array.isArray(semana.historias) && semana.historias.map((h,i) => {
+                        const estadoRed = h.estadoPorRed?.[red] || "programado";
+                        return <div key={`${red}-${h.id||i}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-borde py-3 text-xs">
+                          <div><p className="font-medium">Historia {i+1} · {h.tipo === "reel" ? "Video" : "Imagen"}</p>
+                            <p className="text-[11px] text-tinta-apagado">{fechaContenido(h,semana.zonaHoraria)}{h.llevaEnlace ? " · con notificación" : ""}</p></div>
+                          <div className="flex flex-wrap items-center gap-2"><Etiqueta valor={estadoRed}/></div>
+                        </div>;
+                      })}
                     </div>)}
                   </div>
                 </details>
@@ -2108,7 +2116,7 @@ function infoPersonal(datos, pedido) {
                 {renovacionReal.configuracionEstado === "programada" ?
                   <p role="status" className="text-xs text-emerald-700">Contenidos aprobados y programados. Consultá los detalles de la semana debajo de Semana 1.</p> :
                 renovacionReal.configuracionEstado === "en_revision" ?
-                  <p role="status" className="text-xs text-tinta-suave">Recibimos los cuatro contenidos. Están pendientes de revisión administrativa; todavía no están programados.</p> :
+                  <p role="status" className="text-xs text-tinta-suave">Recibimos tu pedido. Está pendiente de revisión administrativa; todavía no están programados.</p> :
                   <button type="button" id="programar-semana-2" className={BTN_PRIMARIO}
                     onClick={() => setConfigurandoSemana2(v=>!v)}>
                     {configurandoSemana2 ? "Cerrar editor" : renovacionReal.configuracionEstado === "en_preparacion" ? "Continuar preparación" : "Programar nueva semana"} <ChevronDown size={13}/>
@@ -2120,7 +2128,7 @@ function infoPersonal(datos, pedido) {
                     alFinalizar={() => {
                       try { localStorage.setItem("destacar-cuentas", String(Date.now())); } catch {} setConfigurandoSemana2(false);
                       setRenovacionReal(prev => prev && ({...prev,configuracionEstado:"en_revision"}));
-                      setMensaje("La semana pagada fue enviada a revisión administrativa.");
+                      setMensaje("La semana pagada fue enviada a revisión administrativa."); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
                       cargarRenovacionReal(p.pedidoId).catch(() => {});
                     }}/>
                 }
@@ -2129,6 +2137,7 @@ function infoPersonal(datos, pedido) {
                     <summary className="cursor-pointer text-xs font-medium">Ver contenidos de la semana <ChevronDown size={13} className="inline"/></summary>
                     <div className="mt-3 space-y-2 border-t border-borde pt-3">
                       {renovacionReal.resumenContenidos.map(c=><p key={c.numero} className="text-xs">Contenido {c.numero} · {nombreTipo(c.tipo)} · {c.dia} {horaLocalEn12Horas(c.hora)}</p>)}
+                      {Array.isArray(renovacionReal.resumenHistorias) && renovacionReal.resumenHistorias.map(h=><p key={`historia-${h.numero}`} className="text-xs">Historia {h.numero} · {h.tipo === "reel" ? "Video" : "Imagen"} · {h.dia} {horaLocalEn12Horas(h.hora)}</p>)}
                     </div>
                   </details>}
               </section>

@@ -24,9 +24,9 @@ function token(env,id,action,detalle){const vence=Date.now()+VENCE;return {vence
 function firmaValida(env,id,action,detalle,vence,valor){if(!/^\d{13}$/.test(String(vence))||Number(vence)<Date.now()||Number(vence)>Date.now()+VENCE)return false;if(!/^[a-f0-9]{64}$/i.test(String(valor)))return false;const a=Buffer.from(firma(env,id,action,detalle,vence),'hex');return crypto.timingSafeEqual(a,Buffer.from(valor,'hex'));}
 function campos(env,id,action,detalle){const f=token(env,id,action,detalle);return `<input type="hidden" name="semanaId" value="${escape(id)}"><input type="hidden" name="accion" value="${escape(action)}"><input type="hidden" name="detalle" value="${escape(detalle)}"><input type="hidden" name="vence" value="${f.vence}"><input type="hidden" name="csrf" value="${f.csrf}">`;}
 function nav(doc){const q=encodeURIComponent(doc._id);return `<nav><a href="${BASE_PROG}?semanaId=${q}">Aprobar y programar semana</a><a href="${BASE_ARCH}?semanaId=${q}">Revisión de contenidos</a><a href="${BASE_PROG}">Volver a los pedidos</a></nav>`;}
-function archivoEsperado(doc,contenidoId,pos){const pub=doc?.configuracion?.publicaciones?.find(p=>p.id===contenidoId);return pub?.archivosSeleccionados?.[pos]||null;}
+function archivoEsperado(doc,contenidoId,pos){const pub=[...(doc?.configuracion?.publicaciones||[]),...(doc?.configuracion?.historias||[])].find(p=>p.id===contenidoId);return pub?.archivosSeleccionados?.[pos]||null;}
 async function consultarArchivos(db,doc){return db.collection(MEDIOS).find({renovacionId:doc._id}).sort({contenidoId:1,posicion:1}).toArray();}
-function completos(doc,archivos){const ps=doc?.configuracion?.publicaciones;if(!Array.isArray(ps)||ps.length!==4)return false;const n=ps.reduce((x,p)=>x+p.archivosSeleccionados.length,0);if(n!==archivos.length)return false;return ps.every(p=>p.archivosSeleccionados.every((a,i)=>archivos.some(b=>b.contenidoId===p.id&&b.posicion===i&&b.nombre===a.nombre&&b.tipo===a.tipo&&b.tamano===a.tamano&&Boolean(b.r2Key))));}
+function completos(doc,archivos){const ps=doc?.configuracion?.publicaciones;const hs=doc?.configuracion?.historias||[];if(!Array.isArray(ps)||ps.length!==4||!Array.isArray(hs)||hs.length>3)return false;const todos=[...ps,...hs];const n=todos.reduce((x,p)=>x+p.archivosSeleccionados.length,0);if(n!==archivos.length)return false;return todos.every(p=>p.archivosSeleccionados.every((a,i)=>archivos.some(b=>b.contenidoId===p.id&&b.posicion===i&&b.nombre===a.nombre&&b.tipo===a.tipo&&b.tamano===a.tamano&&Boolean(b.r2Key))));}
 function conectados(conexiones,redes){return redes.every(red=>{const x=conexiones.find(c=>c.plataforma===red&&c.estado==='conectada');return x?.pageId && x.tokenPaginaCifrado?.contenido && (red!=='instagram'||x.instagramId);});}
 // Conservamos siempre el original en R2. Para Meta se usa una copia JPEG
 // validada y asociada al mismo archivo; nunca se reescribe el original.
@@ -90,7 +90,7 @@ async function propuesta(db,doc){
   const ultimos=anteriores.map(x=>Date.parse(x.fin||'')).filter(Number.isFinite);
   const desde=Math.max(Date.now()+15*60000,...ultimos);
   const ancla=new Date(desde);
-  const virtual={redes:doc.redes,zonaHoraria:doc.configuracion?.zonaHoraria,publicaciones:doc.configuracion?.publicaciones};
+  const virtual={redes:doc.redes,zonaHoraria:doc.configuracion?.zonaHoraria,publicaciones:doc.configuracion?.publicaciones,historias:doc.configuracion?.historias||[]};
   const resultado=calcularCalendarioSimulado(virtual,ancla);
   return {resultado,ancla,fin:new Date(desde+7*24*3600000)};
 }
@@ -110,11 +110,11 @@ async function programar(db,env,doc){
   const chk=await comprobaciones(db,env,doc);
   if(chk.problemas.length)return {error:chk.problemas.join(' ')};
   const pr=previo?null:await propuesta(db,doc);
-  if(pr?.resultado.advertencias.length||pr&&pr.resultado.eventos.length!==doc.redes.length*4)return {error:pr.resultado.advertencias.join(' ')||'Faltan horarios válidos.'};
+  if(pr?.resultado.advertencias.length||pr&&pr.resultado.eventos.length!==doc.redes.length*4+(doc.configuracion?.historias||[]).length)return {error:pr.resultado.advertencias.join(' ')||'Faltan horarios válidos.'};
   const ahora=new Date();
   if(!previo){
-    const eventos=pr.resultado.eventos.map(e=>({id:e.id,contenidoId:e.contenidoId,red:e.red,tipo:e.tipo,fechaHoraUTC:e.fechaHoraUTC,estado:'programada',intentos:0,contenedorId:null,metaId:null,enlace:null,publicadaEn:null}));
-    try{await cola.insertOne({_id:doc._id,tipoSemana:'pagada',pedidoId:doc.pedidoId,clienteUsuarioId:doc.clienteUsuarioId,numeroSemana:numeroSemana(doc),revision:crypto.createHash('sha256').update(JSON.stringify({configuracion:doc.configuracion,archivos:chk.archivos.map(a=>[a._id,a.revision,a.r2Key])})).digest('hex'),estado:'preparando',publicacionHabilitada:false,creadoEn:ahora,inicio:pr.ancla,fin:pr.fin,zonaHoraria:doc.configuracion.zonaHoraria,redes:doc.redes,publicaciones:doc.configuracion.publicaciones,eventos});}
+    const eventos=pr.resultado.eventos.map(e=>({id:e.id,contenidoId:e.contenidoId,red:e.red,tipo:e.tipo,fechaHoraUTC:e.fechaHoraUTC,estado:'programada',intentos:0,contenedorId:null,metaId:null,enlace:null,publicadaEn:null,soloAviso:!!e.soloAviso,etiqueta:e.etiqueta||e.contenidoId}));
+    try{await cola.insertOne({_id:doc._id,tipoSemana:'pagada',pedidoId:doc.pedidoId,clienteUsuarioId:doc.clienteUsuarioId,numeroSemana:numeroSemana(doc),revision:crypto.createHash('sha256').update(JSON.stringify({configuracion:doc.configuracion,archivos:chk.archivos.map(a=>[a._id,a.revision,a.r2Key])})).digest('hex'),estado:'preparando',publicacionHabilitada:false,creadoEn:ahora,inicio:pr.ancla,fin:pr.fin,zonaHoraria:doc.configuracion.zonaHoraria,redes:doc.redes,publicaciones:doc.configuracion.publicaciones,historias:doc.configuracion.historias||[],eventos});}
     catch(e){if(e?.code===11000)return {error:'Otra sesión está programando esta semana. Actualizá la página.'};throw e;}
   }else if(previo.estado!=='preparando'||previo.tipoSemana!=='pagada'||previo.pedidoId!==doc.pedidoId){return {error:'La programación anterior tiene un estado incompatible. Requiere revisión técnica.'};}
   const base=previo||await cola.findOne({_id:doc._id,estado:'preparando'});
@@ -162,7 +162,7 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
     if(!doc)return pagina('Semana no encontrada','',404);
     if(request.method==='GET'&&tipo==='archivos'&&url.searchParams.get('accion')==='ver'){
       const content=url.searchParams.get('contenido'),pos=Number(url.searchParams.get('pos'));
-      if(!/^contenido-[1-4]$/.test(content||'')||!Number.isInteger(pos)||pos<0||pos>9)return pagina('Archivo inválido','',400);
+      if(!/^(contenido-[1-4]|historia-[1-3])$/.test(content||'')||!Number.isInteger(pos)||pos<0||pos>9)return pagina('Archivo inválido','',400);
       const a=await db.collection(MEDIOS).findOne({renovacionId:doc._id,contenidoId:content,posicion:pos});
       return verArchivo(request,env,db,doc,a);
     }
@@ -170,7 +170,7 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
       if(tipo==='archivos'&&body.get('accion')==='preparar_jpeg'){
         if(doc.configuracionEstado!=='en_revision')return pagina('Revisión cerrada','',409);
         const [content,posTxt]=(body.get('detalle')||'').split(':');const pos=Number(posTxt);
-        if(!/^contenido-[1-4]$/.test(content)||!Number.isInteger(pos)||pos<0||pos>9)return pagina('Archivo inválido','',400);
+        if(!/^(contenido-[1-4]|historia-[1-3])$/.test(content)||!Number.isInteger(pos)||pos<0||pos>9)return pagina('Archivo inválido','',400);
         const esperado=archivoEsperado(doc,content,pos);
         const a=await db.collection(MEDIOS).findOne({renovacionId:doc._id,contenidoId:content,posicion:pos});
         if(!esperado||!a||a.nombre!==esperado.nombre||a.tamano!==esperado.tamano||a.tipo!==esperado.tipo)return pagina('Archivo sin aprobar','',409);
@@ -181,7 +181,7 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
       if(tipo==='archivos'&&body.get('accion')==='preparar_jpeg_todos'){
         if(doc.configuracionEstado!=='en_revision')return pagina('Revisión cerrada','',409);
         const pendientes=[];
-        for(const p of (doc.configuracion?.publicaciones||[]))for(let pos=0;pos<p.archivosSeleccionados.length;pos++){
+        for(const p of [...(doc.configuracion?.publicaciones||[]),...(doc.configuracion?.historias||[])])for(let pos=0;pos<p.archivosSeleccionados.length;pos++){
           const a=await db.collection(MEDIOS).findOne({renovacionId:doc._id,contenidoId:p.id,posicion:pos});
           const okJpeg=a?.publicacionTipo==='image/jpeg'&&Boolean(a?.publicacionR2Key)&&a?.publicacionTamano>0;
           if(a&&doc.redes.includes('instagram')&&['image/png','image/webp'].includes(a.tipo||'')&&!okJpeg)pendientes.push(a);
@@ -194,7 +194,7 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
       if(tipo==='archivos'&&body.get('accion')==='revision_archivo'){
         if(!['en_revision'].includes(doc.configuracionEstado))return pagina('Revisión cerrada','<p>La semana ya cambió de estado.</p>',409);
         const [content,posTxt,revision]=(body.get('detalle')||'').split(':');const pos=Number(posTxt);
-        if(!/^contenido-[1-4]$/.test(content)||!Number.isInteger(pos)||pos<0||pos>9||!['aprobado','rechazado'].includes(revision))return pagina('Revisión inválida','',400);
+        if(!/^(contenido-[1-4]|historia-[1-3])$/.test(content)||!Number.isInteger(pos)||pos<0||pos>9||!['aprobado','rechazado'].includes(revision))return pagina('Revisión inválida','',400);
         const esperado=archivoEsperado(doc,content,pos);if(!esperado)return pagina('Archivo no incluido','',400);
         const a=await db.collection(MEDIOS).findOne({renovacionId:doc._id,contenidoId:content,posicion:pos});
         if(!a||a.nombre!==esperado.nombre||a.tamano!==esperado.tamano||a.tipo!==esperado.tipo)return pagina('Archivo diferente','',409);
@@ -232,10 +232,25 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
         }).join('');
         return `<section><h2>Contenido ${i+1} · ${escape(p.tipo)}</h2><p class="muted">${escape(p.diaPreferido)} · ${escape(p.horaLocalPreferida)} · hora local</p>${campoCopy('Descripción',p.descripcion)}${campoCopy('Instagram',p.ctaInstagram)}${campoCopy('Facebook',`${p.ctaFacebook||''} · ${p.urlFacebook||''}`.trim())}${campoCopy('Hashtags',p.hashtags)}<div class="archivos">${filas}</div></section>`;
       }).join('');
+      const tarjetasHistorias=(doc.configuracion?.historias||[]).map((p,i)=>{
+        const filas=p.archivosSeleccionados.map((meta,pos)=>{
+          const a=archivos.find(a=>a.contenidoId===p.id&&a.posicion===pos);
+          const ver=`${BASE_ARCH}?semanaId=${encodeURIComponent(id)}&accion=ver&contenido=${encodeURIComponent(p.id)}&pos=${pos}`;
+          const media=a?.r2Key ? a.tipo.startsWith('image/')?`<img src="${escape(ver)}" alt="Historia ${i+1}" data-modal="${escape(ver)}">`:`<video src="${escape(ver)}" controls preload="none" playsinline></video>`:'<p>Archivo pendiente</p>';
+          const requiereJpeg=doc.redes.includes('instagram')&&['image/png','image/webp'].includes(a?.tipo||'');
+          const jpegListo=a?.publicacionTipo==='image/jpeg'&&Boolean(a?.publicacionR2Key)&&a?.publicacionTamano>0;
+          const estadoJPEG=requiereJpeg?`<p class="${jpegListo?'good':'warn'}">${jpegListo?'JPEG para Instagram preparado':'Pendiente: preparar JPEG para Instagram'}</p>`:'' ;
+          const botones=doc.configuracionEstado==='en_revision'&&a?.r2Key
+            ? `${requiereJpeg&&!jpegListo?`<form method="post" action="${BASE_ARCH}?semanaId=${encodeURIComponent(id)}">${campos(env,id,'preparar_jpeg',`${p.id}:${pos}`)}<button type="submit">Preparar JPEG</button></form>`:''}${a.revision!=='aprobado'?`<form method="post" action="${BASE_ARCH}?semanaId=${encodeURIComponent(id)}">${campos(env,id,'revision_archivo',`${p.id}:${pos}:aprobado`)}<button type="submit">Aprobar archivo</button></form>`:''}`
+            : '';
+          return `<article>${media}<p>${escape(meta.nombre)} · ${escape(a?.revision||'pendiente')}</p>${estadoJPEG}${botones}</article>`;
+        }).join('');
+        return `<section><h2>Historia ${i+1} · ${escape(p.tipo)}</h2><p class="muted">${escape(p.diaPreferido)} · ${escape(p.horaLocalPreferida)} · hora local</p>${campoCopy('Enlace',p.llevaEnlace?`Sí · ${p.textoEnlace||''}`:'No')}<div class="archivos">${filas}</div></section>`;
+      }).join('');
       const pendientesJpeg=archivos.filter(a=>doc.redes.includes('instagram')&&['image/png','image/webp'].includes(a.tipo||'')&&!(a.publicacionTipo==='image/jpeg'&&a.publicacionR2Key&&a.publicacionTamano>0));
       const barraJpeg=doc.configuracionEstado==='en_revision'&&pendientesJpeg.length?`<section class="barra-jpeg"><span class="warn">${pendientesJpeg.length} archivo${pendientesJpeg.length>1?'s':''} pendiente${pendientesJpeg.length>1?'s':''} de convertir a JPEG</span><form method="post" action="${BASE_ARCH}?semanaId=${encodeURIComponent(id)}">${campos(env,id,'preparar_jpeg_todos','todos')}<button type="submit">Convertir todos a JPG</button></form></section>`:'';
       const scriptModal=`<dialog class="modal" id="modal-img"><button type="button" class="modal-cerrar" aria-label="Cerrar">×</button><img id="modal-img-src" alt="Vista ampliada"></dialog><script>document.querySelectorAll('.btn-copy').forEach(b=>b.addEventListener('click',()=>{const c=b.closest('.copy');c.classList.toggle('abierto');b.textContent=c.classList.contains('abierto')?'Ver menos':'Ver copy completo';}));const dlg=document.getElementById('modal-img'),img=document.getElementById('modal-img-src');document.querySelectorAll('img[data-modal]').forEach(im=>im.addEventListener('click',()=>{img.src=im.dataset.modal;dlg.showModal();}));dlg?.addEventListener('click',e=>{if(e.target===dlg||e.target.classList.contains('modal-cerrar'))dlg.close();});</scr`+`ipt>`;
-      return pagina('Revisión de contenidos · Semana pagada',header+barraJpeg+tarjetas+scriptModal+(doc.configuracionEstado==='en_revision'?`<section class="info">Aprobá cada archivo. Después entrá a «Aprobar y programar semana» para activar la cola real.</section>`:''));
+      return pagina('Revisión de contenidos · Semana pagada',header+barraJpeg+tarjetas+tarjetasHistorias+scriptModal+(doc.configuracionEstado==='en_revision'?`<section class="info">Aprobá cada archivo. Después entrá a «Aprobar y programar semana» para activar la cola real.</section>`:''));
     }
     const plan=await db.collection(COLA).findOne({_id:id});
     if(plan?.estado==='activa'||plan?.estado==='finalizada'){
@@ -245,8 +260,8 @@ export async function ejecutarAdminSemanaPagada(request,env,autorizado,tipo){
     const chk=await comprobaciones(db,env,doc);
     let proj=null;if(!chk.problemas.length)proj=await propuesta(db,doc);
     const warn=[...chk.problemas,...(proj?.resultado?.advertencias||[])];
-    const filas=(proj?.resultado?.eventos||[]).map(e=>`<article>${escape(e.contenidoId)} · ${escape(e.red)} · ${fecha(e.fechaHoraUTC,doc.configuracion.zonaHoraria)}</article>`).join('');
-    const listo=warn.length===0&&proj?.resultado?.eventos?.length===doc.redes.length*4;
+    const filas=(proj?.resultado?.eventos||[]).map(e=>`<article>${escape(e.etiqueta||e.contenidoId)} · ${escape(e.red)}${e.soloAviso?' · con notificación':''} · ${fecha(e.fechaHoraUTC,doc.configuracion.zonaHoraria)}</article>`).join('');
+    const listo=warn.length===0&&proj?.resultado?.eventos?.length===doc.redes.length*4+(doc.configuracion?.historias||[]).length;
     if(String(env.SERVICIO_SEMANAS_PAGADAS_PUBLICACION_HABILITADA||'').toLowerCase()!=='true')warn.push('La programación real de semanas pagadas está en modo seguro: falta habilitarla después de las pruebas.');
     return pagina('Aprobar y programar semana · Pagada',header+`<section><h2>Verificaciones previas</h2>${warn.length?warn.map(x=>`<p class="warn">• ${escape(x)}</p>`).join(''):'<p class="good">✓ Pago, archivos, conexiones y calendario validados.</p>'}</section><section><h2>Programación propuesta</h2><p>Los siete días comenzarán después de la semana anterior, sin superponerse.</p>${filas||'<p class="muted">Todavía no puede calcularse el calendario.</p>'}</section><section><h2>Aprobación final</h2>${listo && String(env.SERVICIO_SEMANAS_PAGADAS_PUBLICACION_HABILITADA||'').toLowerCase()==='true'?`<form method="post" action="${BASE_PROG}?semanaId=${encodeURIComponent(id)}">${campos(env,id,'programar_semana','confirmar')}<button type="submit">Aprobar y programar semana ${numeroSemana(doc)}</button></form>`:'<p>Completá los requisitos pendientes. No se programará ningún envío todavía.</p>'}</section>`);
   });}catch(e){console.error('Admin semana pagada:',e?.name||'Error',e?.code||'');return pagina('Revisión temporalmente no disponible','<p>Revisá los registros de Cloudflare; no se habilitó ninguna publicación.</p>',503);}
