@@ -302,10 +302,20 @@ function VistaArchivoLocal({ archivo, tipo }) {
   useEffect(() => {
     if (!archivo) { setUrl(""); setErrorPrevia(false); return; }
     setErrorPrevia(false);
+    // Imágenes: data URL, no se revoca nunca, así al volver al contenido
+    // la vista previa sigue viva aunque se haya cambiado de contenido/historia.
+    if (tipo !== "reel") {
+      const lector = new FileReader();
+      lector.onload = () => setUrl(String(lector.result || ""));
+      lector.onerror = () => setErrorPrevia(true);
+      lector.readAsDataURL(archivo);
+      return;
+    }
+    // Videos: object URL, se revoca solo al cambiar de archivo / desmontar.
     const nueva = URL.createObjectURL(archivo);
     setUrl(nueva);
     return () => URL.revokeObjectURL(nueva);
-  }, [archivo]);
+  }, [archivo, tipo]);
   if (!archivo || !url) return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
       <FileImage size={28} strokeWidth={1.5} />
@@ -622,7 +632,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         }
         // Tres cargas simultáneas como máximo: reduce las esperas de red/MongoDB
         // sin abrir decenas de conexiones ni saturar un celular.
-        const archivos = contenidos.flatMap(c => c.archivos.map((archivo, pos) => ({
+        const archivos = [...contenidos, ...historias.filter(h => h.archivos.length > 0)].flatMap(c => c.archivos.map((archivo, pos) => ({
           contenido: c.id, pos, archivo,
           clave: `${id}:${c.id}:${pos}:${archivo.name}:${archivo.size}:${archivo.lastModified}`,
         })));
@@ -954,21 +964,21 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
         <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
           <div className="space-y-3">
             <div className="flex gap-2" role="group" aria-label="Elegir historia">
-              {historias.map((h, i) => <button key={h.id} type="button" onClick={() => setHistoriaSeleccionada(i)} className={`flex-1 rounded-sm border px-2 py-2 text-xs font-medium ${historiaSeleccionada === i ? "border-azul bg-azul-suave text-azul" : "border-borde text-tinta-suave"}`}>Historia {i + 1} {h.archivos.length ? "✓" : ""}</button>)}
+              {historias.map((h, i) => <button key={h.id} type="button" disabled={sinEdicion} onClick={() => setHistoriaSeleccionada(i)} className={`flex-1 rounded-sm border px-2 py-2 text-xs font-medium ${historiaSeleccionada === i ? "border-azul bg-azul-suave text-azul" : "border-borde text-tinta-suave"}`}>Historia {i + 1} {h.archivos.length ? "✓" : ""}</button>)}
             </div>
             {(() => { const h = historias[historiaSeleccionada]; return <div className="space-y-3">
               <div className="flex gap-2">
-                <button type="button" onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "imagen", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "imagen" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Imagen 9:16</button>
-                <button type="button" onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "reel", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "reel" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Video 9:16 · hasta 60 seg</button>
+                <button type="button" disabled={sinEdicion} onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "imagen", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "imagen" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Imagen 9:16</button>
+                <button type="button" disabled={sinEdicion} onClick={() => actualizarHistoria(historiaSeleccionada, { tipo: "reel", archivos: [] })} className={`flex-1 rounded-sm border px-2 py-2 ${h.tipo === "reel" ? "border-azul bg-azul-suave text-azul" : "border-borde"}`}>Video 9:16 · hasta 60 seg</button>
               </div>
-              <label className="block cursor-pointer rounded-sm border border-dashed border-borde bg-crema px-3 py-3 text-center text-tinta">Subir {h.tipo === "reel" ? "video MP4" : "imagen"}<input type="file" accept={h.tipo === "reel" ? "video/mp4" : "image/jpeg,image/png,image/webp"} className="hidden" onChange={e => elegirArchivoHistoria(historiaSeleccionada, e)} /></label>
+              <label className="block cursor-pointer rounded-sm border border-dashed border-borde bg-crema px-3 py-3 text-center text-tinta">Subir {h.tipo === "reel" ? "video MP4" : "imagen"}<input type="file" accept={h.tipo === "reel" ? "video/mp4" : "image/jpeg,image/png,image/webp"} className="hidden" onChange={e => elegirArchivoHistoria(historiaSeleccionada, e)} disabled={sinEdicion} /></label>
               {h.archivos[0] && <p className="truncate">Archivo: {h.archivos[0].name}</p>}
               <div className="grid grid-cols-2 gap-3">
-                <label>Día<select className={CAMPO} value={h.dia} onChange={e => actualizarHistoria(historiaSeleccionada, { dia: e.target.value })}>{diasEnOrdenCronologico(zonaHoraria, baseSemana).map(d => <option key={d} value={d}>{etiquetaDiaConFecha(d, zonaHoraria, baseSemana)}</option>)}</select></label>
-                <label>Hora<select className={CAMPO} value={h.hora} onChange={e => actualizarHistoria(historiaSeleccionada, { hora: e.target.value })}>{HORAS_SEMANA.map(hh => <option key={hh} value={hh}>{a12h(hh)}</option>)}</select></label>
+                <label>Día<select className={CAMPO} value={h.dia} disabled={sinEdicion} onChange={e => actualizarHistoria(historiaSeleccionada, { dia: e.target.value })}>{diasEnOrdenCronologico(zonaHoraria, baseSemana).map(d => <option key={d} value={d}>{etiquetaDiaConFecha(d, zonaHoraria, baseSemana)}</option>)}</select></label>
+                <label>Hora<select className={CAMPO} value={h.hora} disabled={sinEdicion} onChange={e => actualizarHistoria(historiaSeleccionada, { hora: e.target.value })}>{HORAS_SEMANA.map(hh => <option key={hh} value={hh}>{a12h(hh)}</option>)}</select></label>
               </div>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={h.llevaEnlace} onChange={e => actualizarHistoria(historiaSeleccionada, { llevaEnlace: e.target.checked })} /> ¿Esta historia lleva enlace o sticker?</label>
-              {h.llevaEnlace && <div><p className="mb-1 text-amber-700">Va con notificación: te avisamos por email y en el panel para que la publiques a mano.</p><input className={CAMPO} value={h.textoEnlace} onChange={e => actualizarHistoria(historiaSeleccionada, { textoEnlace: e.target.value })} placeholder="¿Qué sticker o enlace agregás a mano? Ej: link a la promo" /></div>}
+              <label className="flex items-center gap-2"><input type="checkbox" checked={h.llevaEnlace} disabled={sinEdicion} onChange={e => actualizarHistoria(historiaSeleccionada, { llevaEnlace: e.target.checked })} /> ¿Esta historia lleva enlace o sticker?</label>
+              {h.llevaEnlace && <div><p className="mb-1 text-amber-700">Va con notificación: te avisamos por email y en el panel para que la publiques a mano.</p><input className={CAMPO} value={h.textoEnlace} disabled={sinEdicion} onChange={e => actualizarHistoria(historiaSeleccionada, { textoEnlace: e.target.value })} placeholder="¿Qué sticker o enlace agregás a mano? Ej: link a la promo" /></div>}
               {!h.llevaEnlace && h.archivos.length > 0 && <p className="text-emerald-700">Sin enlace: se publica sola a la hora programada.</p>}
             </div>; })()}
             {errorHistoria && <p role="alert" className="text-red-700">{errorHistoria}</p>}

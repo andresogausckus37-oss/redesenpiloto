@@ -31,6 +31,7 @@ export async function ejecutarAdminResetPruebas(request, env, adminAutorizado) {
       ["pedidos_servicios", { clienteUsuarioId: usuarioId }],
       ["calendarios_clientes_activos", { $or: [{ _id: { $in: pedidoIds } }, { pedidoId: { $in: pedidoIds } }] }],
       ["solicitudes_programacion_servicios", { $or: [{ clienteUsuarioId: usuarioId }, { pedidoId: { $in: pedidoIds } }] }],
+      ["aprobaciones_programacion_servicios", { _id: { $in: pedidoIds } }],
       ["archivos_servicios", { pedidoId: { $in: pedidoIds } }],
       ["cargas_archivos_servicios", { pedidoId: { $in: pedidoIds } }],
       ["conexiones_meta_pedidos", { pedidoId: { $in: pedidoIds } }],

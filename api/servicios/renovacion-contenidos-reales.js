@@ -56,7 +56,7 @@ function configValida(data,doc){
     const par=`${h.dia}:${h.hora}`; if(pares.has(par))return null; pares.add(par);
     const a=h.archivosSeleccionados[0];
     const permitidos=h.tipo==='reel'?['video/mp4']:['image/jpeg','image/png','image/webp'];
-    if(!a||typeof a.nombre!=='string'||a.nombre.length>150||!permitidos.includes(a.tipo)||!Number.isSafeInteger(a.tamano)||a.tamano<100||a.tamano>MAX)return null;
+    if(!a||typeof a.nombre!=='string'||a.nombre.length>150||!permitidos.includes(a.tipo)||!Number.isSafeInteger(a.tamano)||a.tamano<100||a.tamano>(h.tipo==='reel'?MAX_VIDEO:MAX_IMAGEN))return null;
     historias.push({id:h.id,tipo:h.tipo,formato:'9:16',diaPreferido:h.dia,horaLocalPreferida:h.hora,llevaEnlace:h.llevaEnlace,textoEnlace:h.textoEnlace||'',modo:h.llevaEnlace?'con_notificacion':'automatica',archivosSeleccionados:[{nombre:a.nombre,tipo:a.tipo,tamano:a.tamano}],estado:'pendiente_preparacion'});
   }
   return {zonaHoraria:data.zonaHoraria,redes:doc.redes,publicaciones,historias};
