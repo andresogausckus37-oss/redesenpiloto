@@ -302,19 +302,18 @@ function VistaArchivoLocal({ archivo, tipo }) {
   useEffect(() => {
     if (!archivo) { setUrl(""); setErrorPrevia(false); return; }
     setErrorPrevia(false);
-    // Imágenes: data URL, no se revoca nunca, así al volver al contenido
-    // la vista previa sigue viva aunque se haya cambiado de contenido/historia.
+    let cancelado = false;
     if (tipo !== "reel") {
+      // Imágenes: data URL, nunca se revoca. Así no hay carrera con revokeObjectURL.
       const lector = new FileReader();
-      lector.onload = () => setUrl(String(lector.result || ""));
-      lector.onerror = () => setErrorPrevia(true);
+      lector.onload = () => { if (!cancelado) setUrl(String(lector.result || "")); };
+      lector.onerror = () => { if (!cancelado) setErrorPrevia(true); };
       lector.readAsDataURL(archivo);
-      return;
+      return () => { cancelado = true; };
     }
-    // Videos: object URL, se revoca solo al cambiar de archivo / desmontar.
     const nueva = URL.createObjectURL(archivo);
     setUrl(nueva);
-    return () => URL.revokeObjectURL(nueva);
+    return () => { cancelado = true; URL.revokeObjectURL(nueva); };
   }, [archivo, tipo]);
   if (!archivo || !url) return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-tinta-apagado">
@@ -329,8 +328,8 @@ function VistaArchivoLocal({ archivo, tipo }) {
     </div>
   );
   return tipo === "reel"
-    ? <video key={url} className="h-full w-full bg-black object-contain" src={url} controls playsInline preload="metadata" aria-label="Vista previa del video" onError={() => setErrorPrevia(true)} />
-    : <img className="h-full w-full bg-black object-contain" src={url} alt={archivo.name} onError={() => setErrorPrevia(true)} />;
+    ? <video key={url} className="h-full w-full bg-black object-contain" src={url} controls playsInline preload="metadata" aria-label="Vista previa del video" onError={e => { if (e?.target?.src === url) setErrorPrevia(true); }} />
+    : <img key={url} className="h-full w-full bg-black object-contain" src={url} alt={archivo.name} onError={e => { if (e?.target?.src === url) setErrorPrevia(true); }} />;
 }
 
 // Valida proporción en el panel: si la imagen no coincide con el formato elegido, se rechaza acá,
@@ -928,7 +927,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
               <div className="bg-crema px-3 py-2">
                 <div className={`relative mx-auto border-2 border-dashed border-tinta-apagado overflow-hidden rounded-sm border-2 border-tinta bg-borde ${item.formato === "9:16" ? "w-full max-w-[225px]" : "w-full max-w-[300px]"}`}
                   style={{ aspectRatio: item.formato.replace(":", " / ") }}>
-                  <VistaArchivoLocal archivo={item.archivos[mediaVista] || item.archivos[0]} tipo={item.tipo} />
+                  <VistaArchivoLocal key={`${item.id}-${(item.archivos[mediaVista] || item.archivos[0])?.name}-${(item.archivos[mediaVista] || item.archivos[0])?.size}-${(item.archivos[mediaVista] || item.archivos[0])?.lastModified}`} archivo={item.archivos[mediaVista] || item.archivos[0]} tipo={item.tipo} />
                   <span className="absolute right-2 top-2 z-10 rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">✓ {FORMATO_TEXTO[item.formato] || item.formato}</span>
                   {esCarrusel && item.archivos.length > 1 && <>
                     <button type="button" aria-label="Imagen anterior" onClick={() => setMediaVista(i => (i - 1 + item.archivos.length) % item.archivos.length)}
@@ -988,7 +987,7 @@ function EditorPrimeraSemana({ perfil, email, alFinalizar, pedidoRenovacion = nu
             <p className="mb-2 text-[11px] text-tinta-apagado">Vista previa · Historia {historiaSeleccionada + 1}</p>
             <div className="relative mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-lg bg-black text-white">
               {historias[historiaSeleccionada].archivos[0]
-                ? <VistaArchivoLocal archivo={historias[historiaSeleccionada].archivos[0]} tipo={historias[historiaSeleccionada].tipo} />
+                ? <VistaArchivoLocal key={`${historias[historiaSeleccionada].id}-${historias[historiaSeleccionada].archivos[0]?.name}-${historias[historiaSeleccionada].archivos[0]?.size}-${historias[historiaSeleccionada].archivos[0]?.lastModified}`} archivo={historias[historiaSeleccionada].archivos[0]} tipo={historias[historiaSeleccionada].tipo} />
                 : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-white/70">Subí una imagen o video 9:16 para ver tu historia</div>}
               <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/60 to-transparent" />
               <div className="absolute inset-x-0 top-2 flex items-center gap-2 px-3">
